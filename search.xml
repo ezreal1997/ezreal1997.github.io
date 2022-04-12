@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>Hello World</title>
+    <url>/2022/04/10/hello-world/</url>
+    <content><![CDATA[<p>Hello World!</p>
+]]></content>
+  </entry>
+  <entry>
     <title>Paper accepted by VLDB 2022</title>
     <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
     <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
@@ -8,11 +14,5 @@
       <tags>
         <tag>Publication</tag>
       </tags>
-  </entry>
-  <entry>
-    <title>Hello World</title>
-    <url>/2022/04/10/hello-world/</url>
-    <content><![CDATA[<p>Hello World!</p>
-]]></content>
   </entry>
 </search>
