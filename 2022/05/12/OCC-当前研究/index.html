@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.1.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":true},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="内存数据库 随着硬件技术的发展，多核（几十、几百）、大内存（T级别）的单节点配置已在市场上出现，意味着大多数OLTP场景下的数据处理可以完全运行在内存中，SAP HANA、MemSQL、TimesTen、SolidDB、Hekaton等内存数据库也应运而生 关注单机事务吞吐量  分布式NewSQL数据库 NoSQL系统虽然实现了承诺的目标，但其不支持SQL语言、缺乏强一致性 既具有NoSQL的所有">
+<meta property="og:type" content="article">
+<meta property="og:title" content="OCC 当前研究">
+<meta property="og:url" content="http://example.com/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/index.html">
+<meta property="og:site_name" content="ezreal&#39;s blog">
+<meta property="og:description" content="内存数据库 随着硬件技术的发展，多核（几十、几百）、大内存（T级别）的单节点配置已在市场上出现，意味着大多数OLTP场景下的数据处理可以完全运行在内存中，SAP HANA、MemSQL、TimesTen、SolidDB、Hekaton等内存数据库也应运而生 关注单机事务吞吐量  分布式NewSQL数据库 NoSQL系统虽然实现了承诺的目标，但其不支持SQL语言、缺乏强一致性 既具有NoSQL的所有">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/megastore.png">
+<meta property="og:image" content="http://example.com/maat.png">
+<meta property="article:published_time" content="2022-05-12T14:45:09.000Z">
+<meta property="article:modified_time" content="2022-05-12T14:46:58.829Z">
+<meta property="article:author" content="ezreal">
+<meta property="article:tag" content="OCC">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/megastore.png">
+
+<link rel="canonical" href="http://example.com/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>OCC 当前研究 | ezreal's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">ezreal's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="ezreal">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ezreal's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          OCC 当前研究
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-05-12 22:45:09 / Modified: 22:46:58" itemprop="dateCreated datePublished" datetime="2022-05-12T22:45:09+08:00">2022-05-12</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h3 id="内存数据库"><a href="#内存数据库" class="headerlink" title="内存数据库"></a>内存数据库</h3><ul>
+<li>随着硬件技术的发展，多核（几十、几百）、大内存（T级别）的单节点配置已在市场上出现，意味着大多数OLTP场景下的数据处理可以完全运行在内存中，SAP HANA、MemSQL、TimesTen、SolidDB、Hekaton等内存数据库也应运而生</li>
+<li>关注单机事务吞吐量</li>
+</ul>
+<h3 id="分布式NewSQL数据库"><a href="#分布式NewSQL数据库" class="headerlink" title="分布式NewSQL数据库"></a>分布式NewSQL数据库</h3><ul>
+<li>NoSQL系统虽然实现了承诺的目标，但其不支持SQL语言、缺乏强一致性</li>
+<li>既具有NoSQL的所有优点并且还支持SQL语言及ACID事务，如F1、Spanner、CockroachDB、TiDB、OceanBase等</li>
+<li>关注分布式事务吞吐量</li>
+<li>性能优化目标可以统一描述为在硬件资源充足的情况下如何提高事务吞吐量。节约资源已不再是重点，减少系统同步，提高资源利用率才是核心问题</li>
+<li>在分布式计算环境下，网络交互的延迟或异常容易导致2PL协议可能长时间持有锁从而导致系统整体事务吞吐率降低或死锁。</li>
+</ul>
+<h3 id="OCC"><a href="#OCC" class="headerlink" title="OCC"></a>OCC</h3><p>优点</p>
+<ul>
+<li>在高资源竞争、低数据竞争场景下，能够减少事务运行同步开销，避免死锁，支持更高的事务吞吐率</li>
+</ul>
+<p>缺点</p>
+<ul>
+<li>在高数据冲突场景下有较高的事务中止率，浪费计算资源（2PL在此场景下事务中止率也很高，但能够提前中止，不用等到事务提交时）</li>
+</ul>
+<h3 id="在验证阶段使用Paxos提交协议发现冲突"><a href="#在验证阶段使用Paxos提交协议发现冲突" class="headerlink" title="在验证阶段使用Paxos提交协议发现冲突"></a>在验证阶段使用Paxos提交协议发现冲突</h3><h4 id="Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011"><a href="#Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011" class="headerlink" title="Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011"></a>Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011</h4><p><img src="/megastore.png"></p>
+<p>Megastore是少有的在内核层实现OCC的生产级分布式数据库系统，在Entity Group的数据分区级别使用MVOCC实现了串行化隔离级别的事务，同一分区一次只能执行一个事务，分布多副本间可以并发执行事务。一个OCC事务三个阶段的实现大致描述如下：</p>
+<p>1、读取阶段</p>
+<p>① 在任意副本均可发起强一致读；数据更新缓存在应用的事务私有内存</p>
+<p>② 从多数派副本中获取最新事务提交时间戳及事务日志的位置（可以通过查询本地coordinator中副本的数据状态做优化）</p>
+<p>③ 选择一个合适的副本（综合考虑本地性、响应时间、事务提交时间等），使用Paxos协议同步事务日志并将其应用到本地Bigtable中</p>
+<p>④ 若选择了本地副本，则异步更新coordinator中副本数据状态为有效</p>
+<p>⑤ 根据获取的事务提交时间戳从本地Bigtable中读取数据</p>
+<p>2、验证阶段</p>
+<p>① 从强一致读得到的事务日志中获取下一次写入事务日志的位置</p>
+<p>② 选取一个比最新事务提交时间戳更大的值作为本次事务提交时间戳</p>
+<p>③ 将事务私有内存中的更新打包到一个事务日志中</p>
+<p>④ 发起一次完整的两阶段Paxos协议实例（可以优化为一阶段Paxos协议），一个事务日志位置只能由一个事务提交成功。如果成功，则将未成功接受当前事务日志的副本所对应的coordinator中的数据状态设置为失效，通知应用事务已提交；如果失败（prepare阶段发现提交的内容与达成一致的内容不匹配），则终止事务并重新执行</p>
+<p>3、写入阶段（异步执行）</p>
+<p>将更新数据异步写入Bigtable，清理应用事务私有内存数据</p>
+<p><strong>由上述流程可以看出，Megastore将事务局限在一个EG且只能串行化执行，并发冲突的控制粒度在事务级别，导致事务吞吐率非常低。Google内部最终还是放弃了Megastore，转而使用了Spanner（使用MV2PL并发控制技术），因为Spanner通过2PL+2PC实现了跨分区的事务。</strong></p>
+<h3 id="MVCC-OCC在内存数据库中的落地"><a href="#MVCC-OCC在内存数据库中的落地" class="headerlink" title="MVCC+OCC在内存数据库中的落地"></a>MVCC+OCC在内存数据库中的落地</h3><h4 id="High-Performance-Concurrency-Control-Mechanisms-for-Main-Memory-Databases-VLDB-2012"><a href="#High-Performance-Concurrency-Control-Mechanisms-for-Main-Memory-Databases-VLDB-2012" class="headerlink" title="High-Performance Concurrency Control Mechanisms for Main-Memory Databases VLDB 2012"></a>High-Performance Concurrency Control Mechanisms for Main-Memory Databases VLDB 2012</h4><p>真正把OCC在生产系统中落地的是内存数据库Hekaton，论文使用全内存的无锁哈希表存储多版本数据，数据的访问全部通过索引查找实现，一个OCC事务的生命周期实现如下：</p>
+<p>1正常处理阶段（读取阶段）</p>
+<p>① 获取事务开始时的当前时间作为读时间戳并赋予一个唯一的事务号，事务状态设置为active</p>
+<p>② 在事务处理的过程中维护读集（指向读版本的指针）、写集（指向写版本的指针）、扫描集（重新执行扫描时需要的信息，如扫描条件）</p>
+<p>③ 更新数据时（总在最新的版本上更新），版本可更新的判断：</p>
+<ul>
+<li>更新数据的end域无效或事务号所属事务已经中止</li>
+<li><ul>
+<li>将原始版本的end域原子更新为当前事务号，防止其它事务的并发修改</li>
+<li>链接新的数据版本并设置begin域为当前事务号</li>
+<li>可能会出现更新begin域的事务处于preparing状态的数据版本，采取投机更新策略并记录提交依赖</li>
+</ul>
+</li>
+<li>更新数据的end域事务号所属事务处于active或preparing状态</li>
+<li><ul>
+<li>写写冲突，更新事务需要中止</li>
+</ul>
+</li>
+</ul>
+<p>④ 读取数据时，版本可见性的判断</p>
+<ul>
+<li>读取数据的begin&#x2F;end域都是有效的时间戳<ul>
+<li>如果读时间戳在begin&#x2F;end之间，则可见；否则不可见</li>
+</ul>
+</li>
+<li>读取数据的begin域是事务号<ul>
+<li>如果事务号所属的事务状态为active，仅对事务号所属事务可见</li>
+<li>如果事务号所属的事务状态为preparing，读时间戳如果比事务提交时间戳大，则采取投机读策略并记录提交依赖（引入了级联中止问题）如果事务号所属的事务状态为aborted，直接忽略</li>
+<li>如果事务号所属的事务状态为commited，读时间戳如果比事务提交时间戳大，正常读取</li>
+</ul>
+</li>
+<li>读取数据的end域是事务号<ul>
+<li>如果事务号所属的事务状态为active，仅对事务号所属事务不可见</li>
+<li>如果事务号所属的事务状态为preparing，读时间戳如果比事务提交时间戳大，则采取投机忽略策略并记录提交依赖（引入了级联中止问题）；读时间戳如果比事务提交时间戳小，则可见</li>
+<li>如果事务号所属的事务状态为aborted，可见</li>
+<li>如果事务号所属的事务状态为commited，读时间戳如果比事务提交时间戳小，则可见</li>
+</ul>
+</li>
+</ul>
+<p>2、准备阶段（验证阶段）</p>
+<p>① 获取当前时间戳作为提交时间戳，事务状态设置为preparing</p>
+<p>② 读集有效性验证，检查读集中的版本是否依然可见；重新执行扫描集检查是否存在幻读</p>
+<p>③ 等待提交依赖全部完成或当前事务是否已被其它事务设置为中止</p>
+<p>④ 同步写redo日志</p>
+<p>⑤ 将事务状态设置为commited</p>
+<p>3、后处理阶段（写入阶段）</p>
+<p>① 如果提交，将新数据的begin域和旧数据的end域设置为提交时间戳</p>
+<p>② 如果中止，将新数据的begin域设置为无效，尝试将旧数据的end域设置为无效（如果已被其它事务更新则忽略）</p>
+<p>③ 处理提交依赖，如果提交，则减少依赖该事务的其它事务的提交依赖计数；如果中止，则通知依赖该事务的其它事务中止</p>
+<p>④ 清理事务表</p>
+<h3 id="应用层OCC在分布式环境的价值"><a href="#应用层OCC在分布式环境的价值" class="headerlink" title="应用层OCC在分布式环境的价值"></a>应用层OCC在分布式环境的价值</h3><h4 id="F1-A-Distributed-SQL-Database-That-Scales-VLDB-2013"><a href="#F1-A-Distributed-SQL-Database-That-Scales-VLDB-2013" class="headerlink" title="F1: A Distributed SQL Database That Scales VLDB 2013"></a>F1: A Distributed SQL Database That Scales VLDB 2013</h4><p>F1是Google内部研发的分布式关系数据库，存储层基于Spanner，自建SQL层。F1在Spanner之上基于行级的修改时间戳列实现了乐观事务并将其设置为默认配置</p>
+<p>优点</p>
+<ul>
+<li>容忍客户端的不正确行为（如无意义的长事务或未正常结束的事务）</li>
+<li>长事务&#x2F;交互式事务友好（没有锁超时导致中止的问题&#x2F;用户查询期间不持有锁）</li>
+<li>服务端重试友好，对用户透明</li>
+<li>事务更新状态保存在客户端，利于容灾及负载均衡</li>
+<li>易于实现投机写（检查读数据的版本变更发现冲突）</li>
+</ul>
+<p>缺点</p>
+<ul>
+<li>幻读问题需要借助其它手段避免</li>
+<li>高数据竞争场景下的低事务吞吐率</li>
+</ul>
+<p>其中关于OCC优点的描述来自生产级分布式环境运维的最佳实践经验，虽然只是应用层的简单实现，但也从另一方面验证了OCC在现代分布式数据库环境中的技术价值。</p>
+<h3 id="动态调整提交时间戳减少事务中止率"><a href="#动态调整提交时间戳减少事务中止率" class="headerlink" title="动态调整提交时间戳减少事务中止率"></a>动态调整提交时间戳减少事务中止率</h3><h4 id="MaaT-Effective-and-scalable-coordination-of-distributedtransactions-in-the-cloud-VLDB-2014"><a href="#MaaT-Effective-and-scalable-coordination-of-distributedtransactions-in-the-cloud-VLDB-2014" class="headerlink" title="MaaT: Effective and scalable coordination of distributedtransactions in the cloud VLDB 2014"></a>MaaT: Effective and scalable coordination of distributedtransactions in the cloud VLDB 2014</h4><p>当前实现跨结点分布式事务的并发控制技术要么是2PL（Spanner、MySQL Cluster），要么是静态锁（Calvin，对事务操作进行静态分析后提前加锁），而OCC仅在应用层或Megastore中有所应用。OCC没有被普遍使用的原因有如下两点：</p>
+<ul>
+<li>就适用场景来看，OCC适合于交互式或系统内部组件同步延时较大的场景，而在数据库系统内，磁盘、网络延时通常以毫秒计，OCC导致事务中止浪费计算资源的开销劣势远大于减少同步开销的优势</li>
+<li>在分布式数据库实现中，OCC在写入阶段的原子提交协议依然依赖于2PC中的锁机制，没有彻底消除锁机制在云环境中可能会造成的死锁、降低事务吞吐量、系统资源利用率下降等问题</li>
+</ul>
+<p>但是在云环境下，一个理想的云数据库应该满足如下要求：</p>
+<ul>
+<li>在长事务、跨结点事务、高数据热点、高通信延时等场景下依然能够支持高事务吞吐率</li>
+<li>高效的CPU利用率</li>
+<li>高扩展性，减少系统内的同步点</li>
+<li>高并发场景下没有系统性能抖动</li>
+<li>系统无死锁或永久阻塞点</li>
+</ul>
+<p>OCC在这种场景下是有技术优势的，因此，论文致力于实现一个消除2PC中的锁机制且大幅降低事务误中止率的分布式数据库系统MaaT，其基本思想如下：</p>
+<p><img src="/maat.png"></p>
+<p>基本数据结构</p>
+<ul>
+<li>在事务访问的每个结点上需要维护内存事务表，记录事务的提交时间戳区间及当前状态（runing&#x2F;validated&#x2F;committed&#x2F;aborted）</li>
+<li>每个数据对象维护一个最大读时间戳和最大写时间戳，这些时间戳均为已提交事务的提交时间戳</li>
+<li>每个数据对象维护读&#x2F;写过该对象的活跃事务号</li>
+</ul>
+<p>基本流程</p>
+<p>1、读取阶段</p>
+<p>① 在事务请求结点上分配一个全局唯一事务号，并在内存事务表中初始化事务信息（提交时间戳区间设置为0到正无穷，状态设置为running）</p>
+<p>② 事务执行过程中第一次访问任意远程结点上的数据时都需要在结点本地的内存事务表中建立事务相关初始信息</p>
+<p>③ 根据读写类型区别操作</p>
+<ul>
+<li>读操作</li>
+<li>将事务号加入读对象的未提交读事务号列表</li>
+<li>返回读对象数据、读对象上当前加写锁的活跃事务号及读对象的最大写时间戳（事务提交时需保证提交时间戳小于所有该对象上写事务的时间戳并大于最大写时间戳）</li>
+<li>客户端将返回数据缓存在事务私有内存中</li>
+<li>写操作</li>
+<li>将更新数据写入客户端的事务私有内存中</li>
+</ul>
+<p>2、验证阶段</p>
+<p>① 客户端发送预写&#x2F;验证消息到所有相关数据服务器（读写涉及到的服务器），消息中包括与服务器相关的读集、写集及在读取阶段从服务器获取的信息（所有在读对象上加写锁的活跃事务号及最大写时间戳）</p>
+<p>② 预写（处理服务器上的写操作）</p>
+<ul>
+<li>收到消息的服务器将事务号加入写对象的未提交写事务列表</li>
+<li>写事务日志</li>
+<li>获取在写对象上加读锁的活跃事务号及最大读提交时间戳（事务提交时需保证提交时间戳大于所有该对象上读事务的时间戳并大于最大读时间戳）</li>
+<li>获取在写对象上加写锁的活跃事务号</li>
+</ul>
+<p>③ 验证（保证事务的串行化顺序按提交时间戳排序，通过调整事务提交时间戳区间的上下限实现，调整的原则为尽量减少事务中止率）</p>
+<ul>
+<li>对于读集中的对象，需要保证验证事务能在读对象的最大写时间戳之后提交</li>
+<li>对于读对象上的加写锁事务，需要保证在验证事务之后提交</li>
+<li>对于写集中的对象，需要保证验证事务在写对象的最大读时间戳之后提交</li>
+<li>对于写对象上的加读锁事务，需要保证在验证事务之前提交</li>
+<li>对于写对象上的加写锁事务，需要保证在验证事务之后提交</li>
+</ul>
+<p>④ 验证结束后，如果验证事务的提交时间戳区间有效（下限小于等于上限），则将事务状态改为validated；否则，将事务状态改为aborted</p>
+<p>⑤ 各结点通知客户端事务状态及调整后的提交时间戳区间</p>
+<p>3、写入阶段</p>
+<p>① 如果有结点返回aborted，则事务最终状态为aborted</p>
+<p>② 如果所有结点均返回committed，则计算所有提交时间戳区间的交集，区间无效，则事务最终状态为aborted；否则事务最终状态为committed，此时客户端需要从有效区间中选取任意的时间戳作为该事务的提交时间戳</p>
+<p>③ 客户端向相关数据结点发送事务提交或中止消息，提交消息中包含更新数据及确定的提交时间戳</p>
+<p>④ 对于abort消息，数据结点将本地事务表中的事务状态改为aborted，删除该事务在数据对象上加过的锁并记录事务中止日志</p>
+<p>⑤ 对于committed消息，数据结点将本地事务表中的事务状态改为committed，提交时间戳区间设置为客户端确定的时间戳，删除该事务在数据对象上加过的锁并记录事务提交日志</p>
+<p>⑥ 对于读集中的数据对象，如果事务提交时间戳大于读对象的最大读时间戳，则将读对象的最大读时间戳设置为事务提交时间戳</p>
+<p>⑦ 对于写集中的数据对象，如果事务提交时间戳大于写对象的最大写时间戳，则将写对象的最大写时间戳设置为事务提交时间戳并修改写对象的内容</p>
+<p><strong>论文提出的OCC实现方案被2017年的VLDB作为测试OCC性能的参考实现，间接证明这里提出的OCC算法已经得到了学术界的认可，虽然论文中对新OCC算法的性能与其它并发控制算法的比较仍然没有正面评价，但性能瓶颈已经转移到网络传输及CPU计算消耗，事务中止率及同步开销已成为性能瓶颈的次要因素，OCC的扩展性得到了提高。</strong></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/OCC/" rel="tag"># OCC</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/" rel="prev" title="NewSQL 主流实现">
+      <i class="fa fa-chevron-left"></i> NewSQL 主流实现
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%85%E5%AD%98%E6%95%B0%E6%8D%AE%E5%BA%93"><span class="nav-number">1.</span> <span class="nav-text">内存数据库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E5%B8%83%E5%BC%8FNewSQL%E6%95%B0%E6%8D%AE%E5%BA%93"><span class="nav-number">2.</span> <span class="nav-text">分布式NewSQL数据库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#OCC"><span class="nav-number">3.</span> <span class="nav-text">OCC</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%A8%E9%AA%8C%E8%AF%81%E9%98%B6%E6%AE%B5%E4%BD%BF%E7%94%A8Paxos%E6%8F%90%E4%BA%A4%E5%8D%8F%E8%AE%AE%E5%8F%91%E7%8E%B0%E5%86%B2%E7%AA%81"><span class="nav-number">4.</span> <span class="nav-text">在验证阶段使用Paxos提交协议发现冲突</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011"><span class="nav-number">4.1.</span> <span class="nav-text">Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MVCC-OCC%E5%9C%A8%E5%86%85%E5%AD%98%E6%95%B0%E6%8D%AE%E5%BA%93%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0"><span class="nav-number">5.</span> <span class="nav-text">MVCC+OCC在内存数据库中的落地</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#High-Performance-Concurrency-Control-Mechanisms-for-Main-Memory-Databases-VLDB-2012"><span class="nav-number">5.1.</span> <span class="nav-text">High-Performance Concurrency Control Mechanisms for Main-Memory Databases VLDB 2012</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BA%94%E7%94%A8%E5%B1%82OCC%E5%9C%A8%E5%88%86%E5%B8%83%E5%BC%8F%E7%8E%AF%E5%A2%83%E7%9A%84%E4%BB%B7%E5%80%BC"><span class="nav-number">6.</span> <span class="nav-text">应用层OCC在分布式环境的价值</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#F1-A-Distributed-SQL-Database-That-Scales-VLDB-2013"><span class="nav-number">6.1.</span> <span class="nav-text">F1: A Distributed SQL Database That Scales VLDB 2013</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8A%A8%E6%80%81%E8%B0%83%E6%95%B4%E6%8F%90%E4%BA%A4%E6%97%B6%E9%97%B4%E6%88%B3%E5%87%8F%E5%B0%91%E4%BA%8B%E5%8A%A1%E4%B8%AD%E6%AD%A2%E7%8E%87"><span class="nav-number">7.</span> <span class="nav-text">动态调整提交时间戳减少事务中止率</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#MaaT-Effective-and-scalable-coordination-of-distributedtransactions-in-the-cloud-VLDB-2014"><span class="nav-number">7.1.</span> <span class="nav-text">MaaT: Effective and scalable coordination of distributedtransactions in the cloud VLDB 2014</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">ezreal</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">9</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">ezreal</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

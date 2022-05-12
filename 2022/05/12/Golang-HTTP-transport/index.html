@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.1.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":true},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="使用golang net&#x2F;http库发送http请求，最后都是调用 transport的 RoundTrip方法 123type RoundTripper interface &amp;#123;    RoundTrip(*Request) (*Response, error)&amp;#125;  RoundTrip executes a single HTTP transaction, retur">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Golang HTTP transport">
+<meta property="og:url" content="http://example.com/2022/05/12/Golang-HTTP-transport/index.html">
+<meta property="og:site_name" content="ezreal&#39;s blog">
+<meta property="og:description" content="使用golang net&#x2F;http库发送http请求，最后都是调用 transport的 RoundTrip方法 123type RoundTripper interface &amp;#123;    RoundTrip(*Request) (*Response, error)&amp;#125;  RoundTrip executes a single HTTP transaction, retur">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2022-05-12T14:38:37.000Z">
+<meta property="article:modified_time" content="2022-05-12T14:39:09.200Z">
+<meta property="article:author" content="ezreal">
+<meta property="article:tag" content="Golang">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="http://example.com/2022/05/12/Golang-HTTP-transport/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Golang HTTP transport | ezreal's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">ezreal's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/12/Golang-HTTP-transport/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="ezreal">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ezreal's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Golang HTTP transport
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-05-12 22:38:37 / Modified: 22:39:09" itemprop="dateCreated datePublished" datetime="2022-05-12T22:38:37+08:00">2022-05-12</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>使用golang net&#x2F;http库发送http请求，最后都是调用 transport的 RoundTrip方法</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> RoundTripper <span class="keyword">interface</span> &#123;</span><br><span class="line">    RoundTrip(*Request) (*Response, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>RoundTrip executes a single HTTP transaction, returning the Response for the request req.</code> (RoundTrip 代表一个http事务，给一个请求返回一个响应)<br>说白了，就是你给它一个request,它给你一个response</p>
+<p>下面我们来看一下他的实现，对应源文件<code>net/http/transport.go</code>，我感觉这里是http package里面的精髓所在，go里面一个struct就跟一个类一样，transport这个类长这样的</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Transport <span class="keyword">struct</span> &#123;</span><br><span class="line">    idleMu     sync.Mutex</span><br><span class="line">    wantIdle   <span class="type">bool</span> <span class="comment">// user has requested to close all idle conns</span></span><br><span class="line">    idleConn   <span class="keyword">map</span>[connectMethodKey][]*persistConn</span><br><span class="line">    idleConnCh <span class="keyword">map</span>[connectMethodKey]<span class="keyword">chan</span> *persistConn</span><br><span class="line"></span><br><span class="line">    reqMu       sync.Mutex</span><br><span class="line">    reqCanceler <span class="keyword">map</span>[*Request]<span class="function"><span class="keyword">func</span><span class="params">()</span></span></span><br><span class="line"></span><br><span class="line">    altMu    sync.RWMutex</span><br><span class="line">    altProto <span class="keyword">map</span>[<span class="type">string</span>]RoundTripper <span class="comment">// nil or map of URI scheme =&gt; RoundTripper</span></span><br><span class="line">    <span class="comment">//Dial获取一个tcp 连接，也就是net.Conn结构，你就记住可以往里面写request</span></span><br><span class="line">    <span class="comment">//然后从里面搞到response就行了</span></span><br><span class="line">    Dial <span class="function"><span class="keyword">func</span><span class="params">(network, addr <span class="type">string</span>)</span></span> (net.Conn, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>篇幅所限， https和代理相关的我就忽略了， 两个 <code>map</code> 为 <code>idleConn</code>、<code>idleConnCh</code>，<code>idleConn</code> 是保存从 connectMethodKey （代表着不同的协议 不同的host，也就是不同的请求）到 persistConn 的映射， <code>idleConnCh</code> 用来在并发http请求的时候在多个 goroutine 里面相互发送持久连接，也就是说， 这些持久连接是可以重复利用的， 你的http请求用某个<code>persistConn</code>用完了，通过这个<code>channel</code>发送给其他http请求使用这个<code>persistConn</code>，然后我们找到<code>transport</code>的<code>RoundTrip</code>方法</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(t *Transport)</span></span> RoundTrip(req *Request) (resp *Response, err <span class="type">error</span>) &#123;</span><br><span class="line">    ...</span><br><span class="line">    pconn, err := t.getConn(req, cm)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        t.setReqCanceler(req, <span class="literal">nil</span>)</span><br><span class="line">        req.closeBody()</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> pconn.roundTrip(treq)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>前面对输入的错误处理部分我们忽略， 其实就2步，先获取一个TCP长连接，所谓TCP长连接就是三次握手建立连接后不<code>close</code>而是一直保持重复使用（节约环保） 然后调用这个持久连接persistConn 这个struct的roundTrip方法</p>
+<p>我们跟踪第一步</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(t *Transport)</span></span> getConn(req *Request, cm connectMethod) (*persistConn, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> pc := t.getIdleConn(cm); pc != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="comment">// set request canceler to some non-nil function so we</span></span><br><span class="line">        <span class="comment">// can detect whether it was cleared between now and when</span></span><br><span class="line">        <span class="comment">// we enter roundTrip</span></span><br><span class="line">        t.setReqCanceler(req, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;&#125;)</span><br><span class="line">        <span class="keyword">return</span> pc, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">type</span> dialRes <span class="keyword">struct</span> &#123;</span><br><span class="line">        pc  *persistConn</span><br><span class="line">        err <span class="type">error</span></span><br><span class="line">    &#125;</span><br><span class="line">    dialc := <span class="built_in">make</span>(<span class="keyword">chan</span> dialRes)</span><br><span class="line">    <span class="comment">//定义了一个发送 persistConn的channel</span></span><br><span class="line"></span><br><span class="line">    prePendingDial := prePendingDial</span><br><span class="line">    postPendingDial := postPendingDial</span><br><span class="line"></span><br><span class="line">    handlePendingDial := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        <span class="keyword">if</span> prePendingDial != <span class="literal">nil</span> &#123;</span><br><span class="line">            prePendingDial()</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            <span class="keyword">if</span> v := &lt;-dialc; v.err == <span class="literal">nil</span> &#123;</span><br><span class="line">                t.putIdleConn(v.pc)</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> postPendingDial != <span class="literal">nil</span> &#123;</span><br><span class="line">                postPendingDial()</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;()</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    cancelc := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;)</span><br><span class="line">    t.setReqCanceler(req, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; <span class="built_in">close</span>(cancelc) &#125;)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 启动了一个goroutine, 这个goroutine 获取里面调用dialConn搞到</span></span><br><span class="line">    <span class="comment">// persistConn, 然后发送到上面建立的channel  dialc里面，</span></span><br><span class="line">    <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        pc, err := t.dialConn(cm)</span><br><span class="line">        dialc &lt;- dialRes&#123;pc, err&#125;</span><br><span class="line">    &#125;()</span><br><span class="line"></span><br><span class="line">    idleConnCh := t.getIdleConnCh(cm)</span><br><span class="line">    <span class="keyword">select</span> &#123;</span><br><span class="line">    <span class="keyword">case</span> v := &lt;-dialc:</span><br><span class="line">        <span class="comment">// dialc 我们的 dial 方法先搞到通过 dialc通道发过来了</span></span><br><span class="line">        <span class="keyword">return</span> v.pc, v.err</span><br><span class="line">    <span class="keyword">case</span> pc := &lt;-idleConnCh:</span><br><span class="line">        <span class="comment">// 这里代表其他的http请求用完了归还的persistConn通过idleConnCh这个</span></span><br><span class="line">        <span class="comment">// channel发送来的</span></span><br><span class="line">        handlePendingDial()</span><br><span class="line">        <span class="keyword">return</span> pc, <span class="literal">nil</span></span><br><span class="line">    <span class="keyword">case</span> &lt;-req.Cancel:</span><br><span class="line">        handlePendingDial()</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, errors.New(<span class="string">&quot;net/http: request canceled while waiting for connection&quot;</span>)</span><br><span class="line">    <span class="keyword">case</span> &lt;-cancelc:</span><br><span class="line">        handlePendingDial()</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, errors.New(<span class="string">&quot;net/http: request canceled while waiting for connection&quot;</span>)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里面的代码写的很有讲究 , 上面代码里面我也注释了， 定义了一个发送 <code>persistConn</code>的channel<code> dialc</code>， 启动了一个<code>goroutine</code>, 这个<code>goroutine</code> 获取里面调用<code>dialConn</code>搞到<code>persistConn</code>, 然后发送到<code>dialc</code>里面，主协程<code>goroutine</code>在 <code>select</code>里面监听多个<code>channel</code>,看看哪个通道里面先发过来 <code>persistConn</code>，就用哪个，然后<code>return</code>。</p>
+<p>这里要注意的是 <code>idleConnCh</code> 这个通道里面发送来的是其他的http请求用完了归还的<code>persistConn</code>， 如果从这个通道里面搞到了，<code>dialc</code>这个通道也等着发呢，不能浪费，就通过<code>handlePendingDial</code>这个方法把<code>dialc</code>通道里面的<code>persistConn</code>也发到<code>idleConnCh</code>，等待后续给其他http请求使用。</p>
+<p>还有就是，读者可以翻一下代码，每个新建的persistConn的时候都把tcp连接里地输入流，和输出流用br（<code>br *bufio.Reader</code>）,和bw(<code>bw *bufio.Writer</code>)包装了一下，往bw写就写到tcp输入流里面了，读输出流也是通过br读，并启动了读循环和写循环</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">pconn.br = bufio.NewReader(noteEOFReader&#123;pconn.conn, &amp;pconn.sawEOF&#125;)</span><br><span class="line">pconn.bw = bufio.NewWriter(pconn.conn)</span><br><span class="line">go pconn.readLoop()</span><br><span class="line">go pconn.writeLoop()</span><br></pre></td></tr></table></figure>
+
+<p>我们跟踪第二步<code>pconn.roundTrip</code> 调用这个持久连接persistConn 这个struct的<code>roundTrip</code>方法。<br>先瞄一下 <code>persistConn</code> 这个struct</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> persistConn <span class="keyword">struct</span> &#123;</span><br><span class="line">    t        *Transport</span><br><span class="line">    cacheKey connectMethodKey</span><br><span class="line">    conn     net.Conn</span><br><span class="line">    tlsState *tls.ConnectionState</span><br><span class="line">    br       *bufio.Reader       <span class="comment">// 从tcp输出流里面读</span></span><br><span class="line">    sawEOF   <span class="type">bool</span>                <span class="comment">// whether we&#x27;ve seen EOF from conn; owned by readLoop</span></span><br><span class="line">    bw       *bufio.Writer       <span class="comment">// 写到tcp输入流</span></span><br><span class="line">     reqch    <span class="keyword">chan</span> requestAndChan <span class="comment">// 主goroutine 往channnel里面写，读循环从</span></span><br><span class="line">                                 <span class="comment">// channnel里面接受</span></span><br><span class="line">    writech  <span class="keyword">chan</span> writeRequest   <span class="comment">// 主goroutine 往channnel里面写</span></span><br><span class="line">                                 <span class="comment">// 写循环从channel里面接受</span></span><br><span class="line">    closech  <span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;       <span class="comment">// 通知关闭tcp连接的channel</span></span><br><span class="line"></span><br><span class="line">    writeErrCh <span class="keyword">chan</span> <span class="type">error</span></span><br><span class="line"></span><br><span class="line">    lk                   sync.Mutex <span class="comment">// guards following fields</span></span><br><span class="line">    numExpectedResponses <span class="type">int</span></span><br><span class="line">    closed               <span class="type">bool</span> <span class="comment">// whether conn has been closed</span></span><br><span class="line">    broken               <span class="type">bool</span> <span class="comment">// an error has happened on this connection; marked broken so it&#x27;s not reused.</span></span><br><span class="line">    canceled             <span class="type">bool</span> <span class="comment">// whether this conn was broken due a CancelRequest</span></span><br><span class="line">    <span class="comment">// mutateHeaderFunc is an optional func to modify extra</span></span><br><span class="line">    <span class="comment">// headers on each outbound request before it&#x27;s written. (the</span></span><br><span class="line">    <span class="comment">// original Request given to RoundTrip is not modified)</span></span><br><span class="line">    mutateHeaderFunc <span class="function"><span class="keyword">func</span><span class="params">(Header)</span></span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>里面是各种channel, 用的是出神入化， 各位要好好理解一下， 我这里画一下</p>
+<p>这里有三个goroutine，分别用三个圆圈表示， channel用箭头表示</p>
+<p>有两个channel <code>writeRequest</code> 和 <code>requestAndChan</code></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> writeRequest <span class="keyword">struct</span> &#123;</span><br><span class="line">    req *transportRequest</span><br><span class="line">    ch  <span class="keyword">chan</span>&lt;- <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>主goroutine 往writeRequest里面写，写循环从writeRequest里面接受</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> responseAndError <span class="keyword">struct</span> &#123;</span><br><span class="line">    res *Response</span><br><span class="line">    err <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> requestAndChan <span class="keyword">struct</span> &#123;</span><br><span class="line">    req *Request</span><br><span class="line">    ch  <span class="keyword">chan</span> responseAndError</span><br><span class="line">    addedGzip <span class="type">bool</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>主goroutine 往requestAndChan里面写，读循环从requestAndChan里面接受。</p>
+<p>注意这里的channel都是双向channel，也就是channel 的struct里面有一个chan类型的字段， 比如 <code>reqch chan requestAndChan</code> 这里的 requestAndChan 里面的 <code>ch chan responseAndError</code>。</p>
+<p>这个是很牛叉，主 goroutine 通过 reqch 发送requestAndChan 给读循环，然后读循环搞到response后通过 requestAndChan 里面的通道responseAndError把response返给主goroutine，所以我画了一个双向箭头。</p>
+<p>我们研究一下代码，我理解下来其实就是三个goroutine通过channel互相协作的过程。</p>
+<p>主循环：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(pc *persistConn)</span></span> roundTrip(req *transportRequest) (resp *Response, err <span class="type">error</span>) &#123;</span><br><span class="line">    ... 忽略</span><br><span class="line">    <span class="comment">// Write the request concurrently with waiting for a response,</span></span><br><span class="line">    <span class="comment">// in case the server decides to reply before reading our full</span></span><br><span class="line">    <span class="comment">// request body.</span></span><br><span class="line">    writeErrCh := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">error</span>, <span class="number">1</span>)</span><br><span class="line">    pc.writech &lt;- writeRequest&#123;req, writeErrCh&#125;</span><br><span class="line">    <span class="comment">//把request发送给写循环</span></span><br><span class="line">    resc := <span class="built_in">make</span>(<span class="keyword">chan</span> responseAndError, <span class="number">1</span>)</span><br><span class="line">    pc.reqch &lt;- requestAndChan&#123;req.Request, resc, requestedGzip&#125;</span><br><span class="line">    <span class="comment">//发送给读循环</span></span><br><span class="line">    <span class="keyword">var</span> re responseAndError</span><br><span class="line">    <span class="keyword">var</span> respHeaderTimer &lt;-<span class="keyword">chan</span> time.Time</span><br><span class="line">    cancelChan := req.Request.Cancel</span><br><span class="line">WaitResponse:</span><br><span class="line">    <span class="keyword">for</span> &#123;</span><br><span class="line">        <span class="keyword">select</span> &#123;</span><br><span class="line">        <span class="keyword">case</span> err := &lt;-writeErrCh:</span><br><span class="line">            <span class="keyword">if</span> isNetWriteError(err) &#123;</span><br><span class="line">                <span class="comment">//写循环通过这个channel报告错误</span></span><br><span class="line">                <span class="keyword">select</span> &#123;</span><br><span class="line">                <span class="keyword">case</span> re = &lt;-resc:</span><br><span class="line">                    pc.<span class="built_in">close</span>()</span><br><span class="line">                    <span class="keyword">break</span> WaitResponse</span><br><span class="line">                <span class="keyword">case</span> &lt;-time.After(<span class="number">50</span> * time.Millisecond):</span><br><span class="line">                    <span class="comment">// Fall through.</span></span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                re = responseAndError&#123;<span class="literal">nil</span>, err&#125;</span><br><span class="line">                pc.<span class="built_in">close</span>()</span><br><span class="line">                <span class="keyword">break</span> WaitResponse</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> d := pc.t.ResponseHeaderTimeout; d &gt; <span class="number">0</span> &#123;</span><br><span class="line">                timer := time.NewTimer(d)</span><br><span class="line">                <span class="keyword">defer</span> timer.Stop() <span class="comment">// prevent leaks</span></span><br><span class="line">                respHeaderTimer = timer.C</span><br><span class="line">            &#125;</span><br><span class="line">        <span class="keyword">case</span> &lt;-pc.closech:</span><br><span class="line">            <span class="comment">// 如果长连接挂了， 这里的channel有数据， 进入这个case, 进行处理</span></span><br><span class="line"></span><br><span class="line">            <span class="keyword">select</span> &#123;</span><br><span class="line">            <span class="keyword">case</span> re = &lt;-resc:</span><br><span class="line">                <span class="keyword">if</span> fn := testHookPersistConnClosedGotRes; fn != <span class="literal">nil</span> &#123;</span><br><span class="line">                    fn()</span><br><span class="line">                &#125;</span><br><span class="line">            <span class="keyword">default</span>:</span><br><span class="line">                re = responseAndError&#123;err: errClosed&#125;</span><br><span class="line">                <span class="keyword">if</span> pc.isCanceled() &#123;</span><br><span class="line">                    re = responseAndError&#123;err: errRequestCanceled&#125;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">break</span> WaitResponse</span><br><span class="line">        <span class="keyword">case</span> &lt;-respHeaderTimer:</span><br><span class="line">            pc.<span class="built_in">close</span>()</span><br><span class="line">            re = responseAndError&#123;err: errTimeout&#125;</span><br><span class="line">            <span class="keyword">break</span> WaitResponse</span><br><span class="line">            <span class="comment">// 如果timeout，这里的channel有数据， break掉for循环</span></span><br><span class="line">        <span class="keyword">case</span> re = &lt;-resc:</span><br><span class="line">            <span class="keyword">break</span> WaitResponse</span><br><span class="line">           <span class="comment">// 获取到读循环的response, break掉 for循环</span></span><br><span class="line">        <span class="keyword">case</span> &lt;-cancelChan:</span><br><span class="line">            pc.t.CancelRequest(req.Request)</span><br><span class="line">            cancelChan = <span class="literal">nil</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> re.err != <span class="literal">nil</span> &#123;</span><br><span class="line">        pc.t.setReqCanceler(req.Request, <span class="literal">nil</span>)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> re.res, re.err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码主要就干了三件事</p>
+<ul>
+<li>主goroutine -&gt;requestAndChan -&gt; 读循环goroutine</li>
+<li>主goroutine -&gt;writeRequest-&gt; 写循环goroutine</li>
+<li>主goroutine 通过select 监听各个channel上的数据， 比如请求取消， timeout，长连接挂了，写流出错，读流出错， 都是其他goroutine 发送过来的， 跟中断一样，然后相应处理，上面也提到了，有些channel是主goroutine通过channel发送给其他goroutine的struct里面包含的channel, 比如 <code>case err := &lt;-writeErrCh:</code> <code>case re = &lt;-resc:</code></li>
+</ul>
+<p>读循环代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(pc *persistConn)</span></span> readLoop() &#123;</span><br><span class="line"></span><br><span class="line">    ... 忽略</span><br><span class="line">    alive := <span class="literal">true</span></span><br><span class="line">    <span class="keyword">for</span> alive &#123;</span><br><span class="line"></span><br><span class="line">        ... 忽略</span><br><span class="line">        rc := &lt;-pc.reqch</span><br><span class="line"></span><br><span class="line">        <span class="keyword">var</span> resp *Response</span><br><span class="line">        <span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">            resp, err = ReadResponse(pc.br, rc.req)</span><br><span class="line">            <span class="keyword">if</span> err == <span class="literal">nil</span> &amp;&amp; resp.StatusCode == <span class="number">100</span> &#123;</span><br><span class="line">                <span class="comment">//100  Continue  初始的请求已经接受，客户应当继续发送请求的其</span></span><br><span class="line">                <span class="comment">// 余部分</span></span><br><span class="line">                resp, err = ReadResponse(pc.br, rc.req)</span><br><span class="line">                <span class="comment">// 读pc.br（tcp输出流）中的数据，这里的代码在response里面</span></span><br><span class="line">                <span class="comment">//解析statusCode，头字段， 转成标准的内存中的response 类型</span></span><br><span class="line">                <span class="comment">//  http在tcp数据流里面，head和body以 /r/n/r/n分开， 各个头</span></span><br><span class="line">                <span class="comment">// 字段 以/r/n分开</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> resp != <span class="literal">nil</span> &#123;</span><br><span class="line">            resp.TLS = pc.tlsState</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        ...忽略</span><br><span class="line">        <span class="comment">//上面处理一些http协议的一些逻辑行为，</span></span><br><span class="line">        rc.ch &lt;- responseAndError&#123;resp, err&#125; <span class="comment">//把读到的response返回给</span></span><br><span class="line">                                             <span class="comment">//主goroutine</span></span><br><span class="line"></span><br><span class="line">        .. 忽略</span><br><span class="line">        <span class="comment">//忽略部分， 处理cancel req中断， 发送idleConnCh归还pc（持久连接）到持久连接池中（map）</span></span><br><span class="line">    pc.<span class="built_in">close</span>()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>无关代码忽略，这段代码主要干了一件事情</p>
+<blockquote>
+<p>读循环goroutine 通过channel requestAndChan 接受主goroutine发送的request(<code>rc := &lt;-pc.reqch</code>), 并从tcp输出流中读取response， 然后反序列化到结构体中， 最后通过channel 返给主goroutine (<code>rc.ch &lt;- responseAndError&#123;resp, err&#125; </code>)</p>
+</blockquote>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(pc *persistConn)</span></span> writeLoop() &#123;</span><br><span class="line">    <span class="keyword">for</span> &#123;</span><br><span class="line">        <span class="keyword">select</span> &#123;</span><br><span class="line">        <span class="keyword">case</span> wr := &lt;-pc.writech:   <span class="comment">//接受主goroutine的 request</span></span><br><span class="line">            <span class="keyword">if</span> pc.isBroken() &#123;</span><br><span class="line">                wr.ch &lt;- errors.New(<span class="string">&quot;http: can&#x27;t write HTTP request on broken connection&quot;</span>)</span><br><span class="line">                <span class="keyword">continue</span></span><br><span class="line">            &#125;</span><br><span class="line">            err := wr.req.Request.write(pc.bw, pc.isProxy, wr.req.extra)   <span class="comment">//写入tcp输入流</span></span><br><span class="line">            <span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">                err = pc.bw.Flush()</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                pc.markBroken()</span><br><span class="line">                wr.req.Request.closeBody()</span><br><span class="line">            &#125;</span><br><span class="line">            pc.writeErrCh &lt;- err</span><br><span class="line">            wr.ch &lt;- err         <span class="comment">//  出错的时候返给主goroutineto</span></span><br><span class="line">        <span class="keyword">case</span> &lt;-pc.closech:</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>写循环就更简单了，select channel中主gouroutine的request，然后写入tcp输入流，如果出错了，channel 通知调用者。</p>
+<p>整体看下来，过程都很简单，但是代码中有很多值得我们学习的地方，比如高并发请求如何复用tcp连接，这里是连接池的做法，如果使用多个 goroutine相互协作完成一个http请求，出现错误的时候如何通知调用者中断错误，代码风格也有很多可以借鉴的地方。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Golang/" rel="tag"># Golang</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2022/05/12/bug-of-Golang-httputil-ReverseProxy/" rel="prev" title="bug of Golang httputil.ReverseProxy">
+      <i class="fa fa-chevron-left"></i> bug of Golang httputil.ReverseProxy
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2022/05/12/Interesting-Golang/" rel="next" title="Interesting Golang">
+      Interesting Golang <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">ezreal</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">9</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">ezreal</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
