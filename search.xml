@@ -13,85 +13,6 @@
       </tags>
   </entry>
   <entry>
-    <title>NewSQL 主流实现</title>
-    <url>/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/</url>
-    <content><![CDATA[<h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
-<h3 id="MVCC-OCC-x3D-SSI"><a href="#MVCC-OCC-x3D-SSI" class="headerlink" title="MVCC+OCC&#x3D;SSI"></a>MVCC+OCC&#x3D;SSI</h3><p>基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别</p>
-<span id="more"></span>
-
-<h3 id="NewSQL-主流系统"><a href="#NewSQL-主流系统" class="headerlink" title="NewSQL 主流系统"></a>NewSQL 主流系统</h3><p>原生实现</p>
-<ul>
-<li>CockroachDB</li>
-<li>YugaByteDB</li>
-</ul>
-<p>NoSQL+ACID+SQL</p>
-<ul>
-<li>TiDB</li>
-<li>Trafodion</li>
-</ul>
-<p>事务的并发控制是为了实现事务的调度，一个正确、高效的事务调度应满足如下属性：</p>
-<ul>
-<li>可串行化</li>
-</ul>
-<p>多个并发事务的调度S与一个串行化的调度产生相同的结果，则称这个调度S是可串行化的。在数据库实现中，一般使用冲突可串行化技术。</p>
-<ul>
-<li>可恢复性</li>
-</ul>
-<p>已经提交的事务没有读过被终止的事务写过的数据，防止脏读异常。</p>
-<ul>
-<li>避免级联终止</li>
-</ul>
-<p>避免由于事务T1的终止而导致事务T2的终止。</p>
-<ul>
-<li>严格性</li>
-</ul>
-<p>先发生写操作的事务的提交或终止应先于其它冲突事务的提交或终止。</p>
-<table>
-<thead>
-<tr>
-<th>生产级NewSQL数据库</th>
-<th>并发控制</th>
-<th>隔离级别</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Spanner</td>
-<td>MVCC+SS2PL</td>
-<td>Linearizability</td>
-</tr>
-<tr>
-<td>Oceanbase 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>RC</td>
-</tr>
-<tr>
-<td>CockroachDB 1.0</td>
-<td>MVCC+T&#x2F;O</td>
-<td>SSI</td>
-</tr>
-<tr>
-<td>TiDB 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>SI</td>
-</tr>
-<tr>
-<td>FoundationDB 5.1</td>
-<td>MVCC+OCC</td>
-<td>SSI</td>
-</tr>
-</tbody></table>
-<p>FoundationDB 的 OCC 实现也有一些限制，比如官方文档对 KV 和事务的大小及时长做出了如下限制：</p>
-<ul>
-<li>key不超过10K；value不超过100K；事务不超过10M（包括所有读、写涉及的KV）</li>
-<li>仅支持运行时间不超过5s的读写事务</li>
-</ul>
-]]></content>
-      <tags>
-        <tag>NewSQL</tag>
-        <tag>OCC</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Golang HTTP transport</title>
     <url>/2022/05/12/Golang-HTTP-transport/</url>
     <content><![CDATA[<p>使用golang net&#x2F;http库发送http请求，最后都是调用 transport的 RoundTrip方法</p>
@@ -317,7 +238,7 @@
 <ul>
 <li>在高数据冲突场景下有较高的事务中止率，浪费计算资源（2PL在此场景下事务中止率也很高，但能够提前中止，不用等到事务提交时）</li>
 </ul>
-<h3 id="在验证阶段使用Paxos提交协议发现冲突"><a href="#在验证阶段使用Paxos提交协议发现冲突" class="headerlink" title="在验证阶段使用Paxos提交协议发现冲突"></a>在验证阶段使用Paxos提交协议发现冲突</h3><h4 id="Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011"><a href="#Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011" class="headerlink" title="Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011"></a>Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011</h4><p><img src="/megastore.png" alt="Megastore"></p>
+<h3 id="在验证阶段使用Paxos提交协议发现冲突"><a href="#在验证阶段使用Paxos提交协议发现冲突" class="headerlink" title="在验证阶段使用Paxos提交协议发现冲突"></a>在验证阶段使用Paxos提交协议发现冲突</h3><h4 id="Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011"><a href="#Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011" class="headerlink" title="Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011"></a>Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011</h4><p><img src="/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/megastore.png" alt="Megastore"></p>
 <p>Megastore是少有的在内核层实现OCC的生产级分布式数据库系统，在Entity Group的数据分区级别使用MVOCC实现了串行化隔离级别的事务，同一分区一次只能执行一个事务，分布多副本间可以并发执行事务。一个OCC事务三个阶段的实现大致描述如下：</p>
 <p>1、读取阶段</p>
 <p>① 在任意副本均可发起强一致读；数据更新缓存在应用的事务私有内存</p>
@@ -412,7 +333,7 @@
 <li>系统无死锁或永久阻塞点</li>
 </ul>
 <p>OCC在这种场景下是有技术优势的，因此，论文致力于实现一个消除2PC中的锁机制且大幅降低事务误中止率的分布式数据库系统MaaT，其基本思想如下：</p>
-<p><img src="/maat.png" alt="Maat"></p>
+<p><img src="/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/maat.png" alt="Maat"></p>
 <p>基本数据结构</p>
 <ul>
 <li>在事务访问的每个结点上需要维护内存事务表，记录事务的提交时间戳区间及当前状态（runing&#x2F;validated&#x2F;committed&#x2F;aborted）</li>
@@ -463,6 +384,85 @@
 ]]></content>
       <tags>
         <tag>OCC</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>NewSQL 主流实现</title>
+    <url>/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/</url>
+    <content><![CDATA[<h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
+<h3 id="MVCC-OCC-x3D-SSI"><a href="#MVCC-OCC-x3D-SSI" class="headerlink" title="MVCC+OCC&#x3D;SSI"></a>MVCC+OCC&#x3D;SSI</h3><p>基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别</p>
+<span id="more"></span>
+
+<h3 id="NewSQL-主流系统"><a href="#NewSQL-主流系统" class="headerlink" title="NewSQL 主流系统"></a>NewSQL 主流系统</h3><p>原生实现</p>
+<ul>
+<li>CockroachDB</li>
+<li>YugaByteDB</li>
+</ul>
+<p>NoSQL+ACID+SQL</p>
+<ul>
+<li>TiDB</li>
+<li>Trafodion</li>
+</ul>
+<p>事务的并发控制是为了实现事务的调度，一个正确、高效的事务调度应满足如下属性：</p>
+<ul>
+<li>可串行化</li>
+</ul>
+<p>多个并发事务的调度S与一个串行化的调度产生相同的结果，则称这个调度S是可串行化的。在数据库实现中，一般使用冲突可串行化技术。</p>
+<ul>
+<li>可恢复性</li>
+</ul>
+<p>已经提交的事务没有读过被终止的事务写过的数据，防止脏读异常。</p>
+<ul>
+<li>避免级联终止</li>
+</ul>
+<p>避免由于事务T1的终止而导致事务T2的终止。</p>
+<ul>
+<li>严格性</li>
+</ul>
+<p>先发生写操作的事务的提交或终止应先于其它冲突事务的提交或终止。</p>
+<table>
+<thead>
+<tr>
+<th>生产级NewSQL数据库</th>
+<th>并发控制</th>
+<th>隔离级别</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Spanner</td>
+<td>MVCC+SS2PL</td>
+<td>Linearizability</td>
+</tr>
+<tr>
+<td>Oceanbase 1.0</td>
+<td>MVCC+SS2PL</td>
+<td>RC</td>
+</tr>
+<tr>
+<td>CockroachDB 1.0</td>
+<td>MVCC+T&#x2F;O</td>
+<td>SSI</td>
+</tr>
+<tr>
+<td>TiDB 1.0</td>
+<td>MVCC+SS2PL</td>
+<td>SI</td>
+</tr>
+<tr>
+<td>FoundationDB 5.1</td>
+<td>MVCC+OCC</td>
+<td>SSI</td>
+</tr>
+</tbody></table>
+<p>FoundationDB 的 OCC 实现也有一些限制，比如官方文档对 KV 和事务的大小及时长做出了如下限制：</p>
+<ul>
+<li>key不超过10K；value不超过100K；事务不超过10M（包括所有读、写涉及的KV）</li>
+<li>仅支持运行时间不超过5s的读写事务</li>
+</ul>
+]]></content>
+      <tags>
+        <tag>OCC</tag>
+        <tag>NewSQL</tag>
       </tags>
   </entry>
   <entry>
