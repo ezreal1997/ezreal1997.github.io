@@ -208,7 +208,7 @@
               <span class="post-meta-item-text">Posted on</span>
               
 
-              <time title="Created: 2022-05-12 22:45:09 / Modified: 22:46:58" itemprop="dateCreated datePublished" datetime="2022-05-12T22:45:09+08:00">2022-05-12</time>
+              <time title="Created: 2022-05-12 22:45:09 / Modified: 22:58:33" itemprop="dateCreated datePublished" datetime="2022-05-12T22:45:09+08:00">2022-05-12</time>
             </span>
 
           
@@ -226,165 +226,14 @@
 <li>随着硬件技术的发展，多核（几十、几百）、大内存（T级别）的单节点配置已在市场上出现，意味着大多数OLTP场景下的数据处理可以完全运行在内存中，SAP HANA、MemSQL、TimesTen、SolidDB、Hekaton等内存数据库也应运而生</li>
 <li>关注单机事务吞吐量</li>
 </ul>
-<h3 id="分布式NewSQL数据库"><a href="#分布式NewSQL数据库" class="headerlink" title="分布式NewSQL数据库"></a>分布式NewSQL数据库</h3><ul>
-<li>NoSQL系统虽然实现了承诺的目标，但其不支持SQL语言、缺乏强一致性</li>
-<li>既具有NoSQL的所有优点并且还支持SQL语言及ACID事务，如F1、Spanner、CockroachDB、TiDB、OceanBase等</li>
-<li>关注分布式事务吞吐量</li>
-<li>性能优化目标可以统一描述为在硬件资源充足的情况下如何提高事务吞吐量。节约资源已不再是重点，减少系统同步，提高资源利用率才是核心问题</li>
-<li>在分布式计算环境下，网络交互的延迟或异常容易导致2PL协议可能长时间持有锁从而导致系统整体事务吞吐率降低或死锁。</li>
-</ul>
-<h3 id="OCC"><a href="#OCC" class="headerlink" title="OCC"></a>OCC</h3><p>优点</p>
-<ul>
-<li>在高资源竞争、低数据竞争场景下，能够减少事务运行同步开销，避免死锁，支持更高的事务吞吐率</li>
-</ul>
-<p>缺点</p>
-<ul>
-<li>在高数据冲突场景下有较高的事务中止率，浪费计算资源（2PL在此场景下事务中止率也很高，但能够提前中止，不用等到事务提交时）</li>
-</ul>
-<h3 id="在验证阶段使用Paxos提交协议发现冲突"><a href="#在验证阶段使用Paxos提交协议发现冲突" class="headerlink" title="在验证阶段使用Paxos提交协议发现冲突"></a>在验证阶段使用Paxos提交协议发现冲突</h3><h4 id="Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011"><a href="#Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011" class="headerlink" title="Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011"></a>Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011</h4><p><img src="/megastore.png"></p>
-<p>Megastore是少有的在内核层实现OCC的生产级分布式数据库系统，在Entity Group的数据分区级别使用MVOCC实现了串行化隔离级别的事务，同一分区一次只能执行一个事务，分布多副本间可以并发执行事务。一个OCC事务三个阶段的实现大致描述如下：</p>
-<p>1、读取阶段</p>
-<p>① 在任意副本均可发起强一致读；数据更新缓存在应用的事务私有内存</p>
-<p>② 从多数派副本中获取最新事务提交时间戳及事务日志的位置（可以通过查询本地coordinator中副本的数据状态做优化）</p>
-<p>③ 选择一个合适的副本（综合考虑本地性、响应时间、事务提交时间等），使用Paxos协议同步事务日志并将其应用到本地Bigtable中</p>
-<p>④ 若选择了本地副本，则异步更新coordinator中副本数据状态为有效</p>
-<p>⑤ 根据获取的事务提交时间戳从本地Bigtable中读取数据</p>
-<p>2、验证阶段</p>
-<p>① 从强一致读得到的事务日志中获取下一次写入事务日志的位置</p>
-<p>② 选取一个比最新事务提交时间戳更大的值作为本次事务提交时间戳</p>
-<p>③ 将事务私有内存中的更新打包到一个事务日志中</p>
-<p>④ 发起一次完整的两阶段Paxos协议实例（可以优化为一阶段Paxos协议），一个事务日志位置只能由一个事务提交成功。如果成功，则将未成功接受当前事务日志的副本所对应的coordinator中的数据状态设置为失效，通知应用事务已提交；如果失败（prepare阶段发现提交的内容与达成一致的内容不匹配），则终止事务并重新执行</p>
-<p>3、写入阶段（异步执行）</p>
-<p>将更新数据异步写入Bigtable，清理应用事务私有内存数据</p>
-<p><strong>由上述流程可以看出，Megastore将事务局限在一个EG且只能串行化执行，并发冲突的控制粒度在事务级别，导致事务吞吐率非常低。Google内部最终还是放弃了Megastore，转而使用了Spanner（使用MV2PL并发控制技术），因为Spanner通过2PL+2PC实现了跨分区的事务。</strong></p>
-<h3 id="MVCC-OCC在内存数据库中的落地"><a href="#MVCC-OCC在内存数据库中的落地" class="headerlink" title="MVCC+OCC在内存数据库中的落地"></a>MVCC+OCC在内存数据库中的落地</h3><h4 id="High-Performance-Concurrency-Control-Mechanisms-for-Main-Memory-Databases-VLDB-2012"><a href="#High-Performance-Concurrency-Control-Mechanisms-for-Main-Memory-Databases-VLDB-2012" class="headerlink" title="High-Performance Concurrency Control Mechanisms for Main-Memory Databases VLDB 2012"></a>High-Performance Concurrency Control Mechanisms for Main-Memory Databases VLDB 2012</h4><p>真正把OCC在生产系统中落地的是内存数据库Hekaton，论文使用全内存的无锁哈希表存储多版本数据，数据的访问全部通过索引查找实现，一个OCC事务的生命周期实现如下：</p>
-<p>1正常处理阶段（读取阶段）</p>
-<p>① 获取事务开始时的当前时间作为读时间戳并赋予一个唯一的事务号，事务状态设置为active</p>
-<p>② 在事务处理的过程中维护读集（指向读版本的指针）、写集（指向写版本的指针）、扫描集（重新执行扫描时需要的信息，如扫描条件）</p>
-<p>③ 更新数据时（总在最新的版本上更新），版本可更新的判断：</p>
-<ul>
-<li>更新数据的end域无效或事务号所属事务已经中止</li>
-<li><ul>
-<li>将原始版本的end域原子更新为当前事务号，防止其它事务的并发修改</li>
-<li>链接新的数据版本并设置begin域为当前事务号</li>
-<li>可能会出现更新begin域的事务处于preparing状态的数据版本，采取投机更新策略并记录提交依赖</li>
-</ul>
-</li>
-<li>更新数据的end域事务号所属事务处于active或preparing状态</li>
-<li><ul>
-<li>写写冲突，更新事务需要中止</li>
-</ul>
-</li>
-</ul>
-<p>④ 读取数据时，版本可见性的判断</p>
-<ul>
-<li>读取数据的begin&#x2F;end域都是有效的时间戳<ul>
-<li>如果读时间戳在begin&#x2F;end之间，则可见；否则不可见</li>
-</ul>
-</li>
-<li>读取数据的begin域是事务号<ul>
-<li>如果事务号所属的事务状态为active，仅对事务号所属事务可见</li>
-<li>如果事务号所属的事务状态为preparing，读时间戳如果比事务提交时间戳大，则采取投机读策略并记录提交依赖（引入了级联中止问题）如果事务号所属的事务状态为aborted，直接忽略</li>
-<li>如果事务号所属的事务状态为commited，读时间戳如果比事务提交时间戳大，正常读取</li>
-</ul>
-</li>
-<li>读取数据的end域是事务号<ul>
-<li>如果事务号所属的事务状态为active，仅对事务号所属事务不可见</li>
-<li>如果事务号所属的事务状态为preparing，读时间戳如果比事务提交时间戳大，则采取投机忽略策略并记录提交依赖（引入了级联中止问题）；读时间戳如果比事务提交时间戳小，则可见</li>
-<li>如果事务号所属的事务状态为aborted，可见</li>
-<li>如果事务号所属的事务状态为commited，读时间戳如果比事务提交时间戳小，则可见</li>
-</ul>
-</li>
-</ul>
-<p>2、准备阶段（验证阶段）</p>
-<p>① 获取当前时间戳作为提交时间戳，事务状态设置为preparing</p>
-<p>② 读集有效性验证，检查读集中的版本是否依然可见；重新执行扫描集检查是否存在幻读</p>
-<p>③ 等待提交依赖全部完成或当前事务是否已被其它事务设置为中止</p>
-<p>④ 同步写redo日志</p>
-<p>⑤ 将事务状态设置为commited</p>
-<p>3、后处理阶段（写入阶段）</p>
-<p>① 如果提交，将新数据的begin域和旧数据的end域设置为提交时间戳</p>
-<p>② 如果中止，将新数据的begin域设置为无效，尝试将旧数据的end域设置为无效（如果已被其它事务更新则忽略）</p>
-<p>③ 处理提交依赖，如果提交，则减少依赖该事务的其它事务的提交依赖计数；如果中止，则通知依赖该事务的其它事务中止</p>
-<p>④ 清理事务表</p>
-<h3 id="应用层OCC在分布式环境的价值"><a href="#应用层OCC在分布式环境的价值" class="headerlink" title="应用层OCC在分布式环境的价值"></a>应用层OCC在分布式环境的价值</h3><h4 id="F1-A-Distributed-SQL-Database-That-Scales-VLDB-2013"><a href="#F1-A-Distributed-SQL-Database-That-Scales-VLDB-2013" class="headerlink" title="F1: A Distributed SQL Database That Scales VLDB 2013"></a>F1: A Distributed SQL Database That Scales VLDB 2013</h4><p>F1是Google内部研发的分布式关系数据库，存储层基于Spanner，自建SQL层。F1在Spanner之上基于行级的修改时间戳列实现了乐观事务并将其设置为默认配置</p>
-<p>优点</p>
-<ul>
-<li>容忍客户端的不正确行为（如无意义的长事务或未正常结束的事务）</li>
-<li>长事务&#x2F;交互式事务友好（没有锁超时导致中止的问题&#x2F;用户查询期间不持有锁）</li>
-<li>服务端重试友好，对用户透明</li>
-<li>事务更新状态保存在客户端，利于容灾及负载均衡</li>
-<li>易于实现投机写（检查读数据的版本变更发现冲突）</li>
-</ul>
-<p>缺点</p>
-<ul>
-<li>幻读问题需要借助其它手段避免</li>
-<li>高数据竞争场景下的低事务吞吐率</li>
-</ul>
-<p>其中关于OCC优点的描述来自生产级分布式环境运维的最佳实践经验，虽然只是应用层的简单实现，但也从另一方面验证了OCC在现代分布式数据库环境中的技术价值。</p>
-<h3 id="动态调整提交时间戳减少事务中止率"><a href="#动态调整提交时间戳减少事务中止率" class="headerlink" title="动态调整提交时间戳减少事务中止率"></a>动态调整提交时间戳减少事务中止率</h3><h4 id="MaaT-Effective-and-scalable-coordination-of-distributedtransactions-in-the-cloud-VLDB-2014"><a href="#MaaT-Effective-and-scalable-coordination-of-distributedtransactions-in-the-cloud-VLDB-2014" class="headerlink" title="MaaT: Effective and scalable coordination of distributedtransactions in the cloud VLDB 2014"></a>MaaT: Effective and scalable coordination of distributedtransactions in the cloud VLDB 2014</h4><p>当前实现跨结点分布式事务的并发控制技术要么是2PL（Spanner、MySQL Cluster），要么是静态锁（Calvin，对事务操作进行静态分析后提前加锁），而OCC仅在应用层或Megastore中有所应用。OCC没有被普遍使用的原因有如下两点：</p>
-<ul>
-<li>就适用场景来看，OCC适合于交互式或系统内部组件同步延时较大的场景，而在数据库系统内，磁盘、网络延时通常以毫秒计，OCC导致事务中止浪费计算资源的开销劣势远大于减少同步开销的优势</li>
-<li>在分布式数据库实现中，OCC在写入阶段的原子提交协议依然依赖于2PC中的锁机制，没有彻底消除锁机制在云环境中可能会造成的死锁、降低事务吞吐量、系统资源利用率下降等问题</li>
-</ul>
-<p>但是在云环境下，一个理想的云数据库应该满足如下要求：</p>
-<ul>
-<li>在长事务、跨结点事务、高数据热点、高通信延时等场景下依然能够支持高事务吞吐率</li>
-<li>高效的CPU利用率</li>
-<li>高扩展性，减少系统内的同步点</li>
-<li>高并发场景下没有系统性能抖动</li>
-<li>系统无死锁或永久阻塞点</li>
-</ul>
-<p>OCC在这种场景下是有技术优势的，因此，论文致力于实现一个消除2PC中的锁机制且大幅降低事务误中止率的分布式数据库系统MaaT，其基本思想如下：</p>
-<p><img src="/maat.png"></p>
-<p>基本数据结构</p>
-<ul>
-<li>在事务访问的每个结点上需要维护内存事务表，记录事务的提交时间戳区间及当前状态（runing&#x2F;validated&#x2F;committed&#x2F;aborted）</li>
-<li>每个数据对象维护一个最大读时间戳和最大写时间戳，这些时间戳均为已提交事务的提交时间戳</li>
-<li>每个数据对象维护读&#x2F;写过该对象的活跃事务号</li>
-</ul>
-<p>基本流程</p>
-<p>1、读取阶段</p>
-<p>① 在事务请求结点上分配一个全局唯一事务号，并在内存事务表中初始化事务信息（提交时间戳区间设置为0到正无穷，状态设置为running）</p>
-<p>② 事务执行过程中第一次访问任意远程结点上的数据时都需要在结点本地的内存事务表中建立事务相关初始信息</p>
-<p>③ 根据读写类型区别操作</p>
-<ul>
-<li>读操作</li>
-<li>将事务号加入读对象的未提交读事务号列表</li>
-<li>返回读对象数据、读对象上当前加写锁的活跃事务号及读对象的最大写时间戳（事务提交时需保证提交时间戳小于所有该对象上写事务的时间戳并大于最大写时间戳）</li>
-<li>客户端将返回数据缓存在事务私有内存中</li>
-<li>写操作</li>
-<li>将更新数据写入客户端的事务私有内存中</li>
-</ul>
-<p>2、验证阶段</p>
-<p>① 客户端发送预写&#x2F;验证消息到所有相关数据服务器（读写涉及到的服务器），消息中包括与服务器相关的读集、写集及在读取阶段从服务器获取的信息（所有在读对象上加写锁的活跃事务号及最大写时间戳）</p>
-<p>② 预写（处理服务器上的写操作）</p>
-<ul>
-<li>收到消息的服务器将事务号加入写对象的未提交写事务列表</li>
-<li>写事务日志</li>
-<li>获取在写对象上加读锁的活跃事务号及最大读提交时间戳（事务提交时需保证提交时间戳大于所有该对象上读事务的时间戳并大于最大读时间戳）</li>
-<li>获取在写对象上加写锁的活跃事务号</li>
-</ul>
-<p>③ 验证（保证事务的串行化顺序按提交时间戳排序，通过调整事务提交时间戳区间的上下限实现，调整的原则为尽量减少事务中止率）</p>
-<ul>
-<li>对于读集中的对象，需要保证验证事务能在读对象的最大写时间戳之后提交</li>
-<li>对于读对象上的加写锁事务，需要保证在验证事务之后提交</li>
-<li>对于写集中的对象，需要保证验证事务在写对象的最大读时间戳之后提交</li>
-<li>对于写对象上的加读锁事务，需要保证在验证事务之前提交</li>
-<li>对于写对象上的加写锁事务，需要保证在验证事务之后提交</li>
-</ul>
-<p>④ 验证结束后，如果验证事务的提交时间戳区间有效（下限小于等于上限），则将事务状态改为validated；否则，将事务状态改为aborted</p>
-<p>⑤ 各结点通知客户端事务状态及调整后的提交时间戳区间</p>
-<p>3、写入阶段</p>
-<p>① 如果有结点返回aborted，则事务最终状态为aborted</p>
-<p>② 如果所有结点均返回committed，则计算所有提交时间戳区间的交集，区间无效，则事务最终状态为aborted；否则事务最终状态为committed，此时客户端需要从有效区间中选取任意的时间戳作为该事务的提交时间戳</p>
-<p>③ 客户端向相关数据结点发送事务提交或中止消息，提交消息中包含更新数据及确定的提交时间戳</p>
-<p>④ 对于abort消息，数据结点将本地事务表中的事务状态改为aborted，删除该事务在数据对象上加过的锁并记录事务中止日志</p>
-<p>⑤ 对于committed消息，数据结点将本地事务表中的事务状态改为committed，提交时间戳区间设置为客户端确定的时间戳，删除该事务在数据对象上加过的锁并记录事务提交日志</p>
-<p>⑥ 对于读集中的数据对象，如果事务提交时间戳大于读对象的最大读时间戳，则将读对象的最大读时间戳设置为事务提交时间戳</p>
-<p>⑦ 对于写集中的数据对象，如果事务提交时间戳大于写对象的最大写时间戳，则将写对象的最大写时间戳设置为事务提交时间戳并修改写对象的内容</p>
-<p><strong>论文提出的OCC实现方案被2017年的VLDB作为测试OCC性能的参考实现，间接证明这里提出的OCC算法已经得到了学术界的认可，虽然论文中对新OCC算法的性能与其它并发控制算法的比较仍然没有正面评价，但性能瓶颈已经转移到网络传输及CPU计算消耗，事务中止率及同步开销已成为性能瓶颈的次要因素，OCC的扩展性得到了提高。</strong></p>
-
+          <!--noindex-->
+            <div class="post-button">
+              <a class="btn" href="/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/#more" rel="contents">
+                Read more &raquo;
+              </a>
+            </div>
+          <!--/noindex-->
+        
       
     </div>
 
@@ -428,7 +277,7 @@
               <span class="post-meta-item-text">Posted on</span>
               
 
-              <time title="Created: 2022-05-12 22:43:24 / Modified: 22:44:57" itemprop="dateCreated datePublished" datetime="2022-05-12T22:43:24+08:00">2022-05-12</time>
+              <time title="Created: 2022-05-12 22:43:24 / Modified: 22:58:20" itemprop="dateCreated datePublished" datetime="2022-05-12T22:43:24+08:00">2022-05-12</time>
             </span>
 
           
@@ -444,73 +293,14 @@
       
           <h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
 <h3 id="MVCC-OCC-x3D-SSI"><a href="#MVCC-OCC-x3D-SSI" class="headerlink" title="MVCC+OCC&#x3D;SSI"></a>MVCC+OCC&#x3D;SSI</h3><p>基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别</p>
-<h3 id="NewSQL-主流系统"><a href="#NewSQL-主流系统" class="headerlink" title="NewSQL 主流系统"></a>NewSQL 主流系统</h3><p>原生实现</p>
-<ul>
-<li>CockroachDB</li>
-<li>YugaByteDB</li>
-</ul>
-<p>NoSQL+ACID+SQL</p>
-<ul>
-<li>TiDB</li>
-<li>Trafodion</li>
-</ul>
-<p>事务的并发控制是为了实现事务的调度，一个正确、高效的事务调度应满足如下属性：</p>
-<ul>
-<li>可串行化</li>
-</ul>
-<p>多个并发事务的调度S与一个串行化的调度产生相同的结果，则称这个调度S是可串行化的。在数据库实现中，一般使用冲突可串行化技术。</p>
-<ul>
-<li>可恢复性</li>
-</ul>
-<p>已经提交的事务没有读过被终止的事务写过的数据，防止脏读异常。</p>
-<ul>
-<li>避免级联终止</li>
-</ul>
-<p>避免由于事务T1的终止而导致事务T2的终止。</p>
-<ul>
-<li>严格性</li>
-</ul>
-<p>先发生写操作的事务的提交或终止应先于其它冲突事务的提交或终止。</p>
-<table>
-<thead>
-<tr>
-<th>生产级NewSQL数据库</th>
-<th>并发控制</th>
-<th>隔离级别</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Spanner</td>
-<td>MVCC+SS2PL</td>
-<td>Linearizability</td>
-</tr>
-<tr>
-<td>Oceanbase 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>RC</td>
-</tr>
-<tr>
-<td>CockroachDB 1.0</td>
-<td>MVCC+T&#x2F;O</td>
-<td>SSI</td>
-</tr>
-<tr>
-<td>TiDB 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>SI</td>
-</tr>
-<tr>
-<td>FoundationDB 5.1</td>
-<td>MVCC+OCC</td>
-<td>SSI</td>
-</tr>
-</tbody></table>
-<p>FoundationDB 的 OCC 实现也有一些限制，比如官方文档对 KV 和事务的大小及时长做出了如下限制：</p>
-<ul>
-<li>key不超过10K；value不超过100K；事务不超过10M（包括所有读、写涉及的KV）</li>
-<li>仅支持运行时间不超过5s的读写事务</li>
-</ul>
-
+          <!--noindex-->
+            <div class="post-button">
+              <a class="btn" href="/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/#more" rel="contents">
+                Read more &raquo;
+              </a>
+            </div>
+          <!--/noindex-->
+        
       
     </div>
 
@@ -554,7 +344,7 @@
               <span class="post-meta-item-text">Posted on</span>
               
 
-              <time title="Created: 2022-05-12 22:41:14 / Modified: 22:41:32" itemprop="dateCreated datePublished" datetime="2022-05-12T22:41:14+08:00">2022-05-12</time>
+              <time title="Created: 2022-05-12 22:41:14 / Modified: 22:58:09" itemprop="dateCreated datePublished" datetime="2022-05-12T22:41:14+08:00">2022-05-12</time>
             </span>
 
           
@@ -568,134 +358,15 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <h3 id="副本集简介"><a href="#副本集简介" class="headerlink" title="副本集简介"></a>副本集简介</h3><p>Mongodb副本集由一组Mongod实例（进程）组成，包含一个Primary节点和多个Secondary节点，Mongodb Driver（客户端）的所有数据都写入Primary，Secondary从Primary同步写入的数据，以保持复制集内所有成员存储相同的数据集，提供数据的高可用。副本集带来的架构优点主要有：</p>
-<ul>
-<li>集群高可用</li>
-<li>读写可分离</li>
-</ul>
-<ol>
-<li><strong>Primary:</strong> 副本集的<strong>主节点</strong>，可读写，<strong>唯一可以进行写操作的节点</strong>，由集群自行选举出来。</li>
-<li><strong>Secondary：</strong> 正常情况下，Seconary会参与Primary选举（自身也可能会被选为Primary），并<strong>从Primary同步最新写入的数据</strong>，以保证与Primary存储相同的数据。Secondary<strong>可以提供读服务</strong>，增加Secondary节点可以提供副本集的读服务能力，提升副本集的可用性。</li>
-<li><strong>Arbiter：</strong> Arbiter节点<strong>只参与投票</strong>，不能被选为Primary，并且<strong>不从Primary同步数据</strong>。非常轻量级的服务，当复制集成员为偶数时，最好加入一个Arbiter节点，以提升复制集可用性。</li>
-<li><strong>Priority0：</strong> Priority0节点的选举优先级为0，<strong>不会被选举为Primary，且不能发起选举</strong>。</li>
-<li><strong>Vote0：</strong> 副本集成员最多50个，参与Primary选举投票的成员最多7个，其他成员（Vote0）的vote属性必须设置为0，即<strong>不参与投票</strong>。</li>
-<li><strong>Hidden：</strong> Hidden节点不能被选为主（Priority为0），并且<strong>对Driver不可见</strong>。因Hidden节点不会接受Driver的请求，可使用Hidden节点做一些<strong>数据备份、离线计算</strong>的任务，不会影响复制集的服务。</li>
-<li><strong>Delayed：</strong> Delayed节点<strong>必须是Hidden节点</strong>，并且其<strong>数据落后与Primary一段时间</strong>（可配置，比如1个小时）。因Delayed节点的数据比Primary落后一段时间，当错误或者无效的数据写入Primary时，可通过Delayed节点来做<strong>数据恢复</strong>。</li>
-</ol>
-<h3 id="Primary选举"><a href="#Primary选举" class="headerlink" title="Primary选举"></a>Primary选举</h3><p>选举过程需要消耗一些时间，在此期间，集群将不能接收write操作（即使旧的primary仍然存活，但因为“网络分区”问题导致它不能与其他secondaries通讯），所有的members（包括旧的primary）都处于只读状态，选举对业务影响很大，所以需要尽量避免选举的发生。</p>
-<p>需要进行Primary选举的场景：</p>
-<ol>
-<li>副本集初始化时；</li>
-<li>副本集被reconfig；</li>
-<li>Secondary节点检测到Primary宕机时；</li>
-<li>当有Primary节点主动stepDown（主动降级为Secondary）时；</li>
-</ol>
-<p>Primary的选举受<strong>节点间心跳、优先级、最新的oplog时间</strong>等多种因素影响。</p>
-<ol>
-<li><strong>心跳：</strong> 复制集中的所有members之间都互相建立心跳连接，且每隔两秒发送一次心跳，如果未在10秒内收到回复，则此member将会被标记为“不可用”，Secondary（前提是可被选为Primary）会发起新的Primary选举，而其他能正常收到心跳反馈的Secondary能否决新的Primary选举。</li>
-<li><strong>优先级：</strong> 优先级即Priority值，每个member都有权重值，默认为都为1，members倾向于选举权重最高者。上述提到，priority为0的member不能被选举为primary且不能发起选举；只要当前primary的权重最高或者持有最新oplog数据的secondaries没有比它更高的权重时，集群不会触发选举。当Primary发现有优先级更高Secondary，并且该Secondary的数据落后在10s内，则Primary会主动降级，让优先级更高的Secondary有成为Primary的机会。</li>
-<li><strong>Optime：</strong> 当前member已经从primary的oplog中应用的最后一个operation的时间戳（此时间戳由primary生成，在oplog中每个操作记录都有）；一个member能成为primary的首要条件就是在所有有效的members中它持有最新的optime。</li>
-<li><strong>多数派连接：</strong> 一个member要成为primary，它必须与“多数派”的其他members建立连接，如果未能与足够多的member建立连接，事实上它本身也无法被选举为primary；多数派参考的是“总票数”，而不是member的个数，因为我们可以给每个member设定不同的“票数”。假设复制集内投票成员数量为N，则大多数为 N&#x2F;2 + 1。</li>
-</ol>
-<p>综上所述，在发起选举以后，能成为Primary的节点需要的条件有：</p>
-<ul>
-<li>能够与“多数派”建立连接</li>
-<li>在所有有效的members中它持有最新的optime</li>
-<li>前两个条件相同的，Priority优先级高的成为Primary</li>
-<li>optime与Priority都相等时，谁发起选举，谁当选Primary</li>
-</ul>
-<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>3.0版本以后<strong>副本集成员最多50个，参与Primary选举投票的成员最多7个</strong>，其他成员（Vote0）的vote属性必须设置为0，即不参与投票。</p>
-<p>副本集中各类角色的特点总结如下：</p>
-<table>
-<thead>
-<tr>
-<th>节点类型</th>
-<th>可读</th>
-<th>可写</th>
-<th>投票</th>
-<th>oplog操作</th>
-<th>当选Primary</th>
-<th>否决</th>
-<th>备注</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Primary</td>
-<td>O</td>
-<td>O</td>
-<td>O</td>
-<td>生成</td>
-<td>—</td>
-<td>O</td>
-<td>无</td>
-</tr>
-<tr>
-<td>Secondary</td>
-<td>O</td>
-<td>X</td>
-<td>O</td>
-<td>同步</td>
-<td>O</td>
-<td>O</td>
-<td>常规的Secondary</td>
-</tr>
-<tr>
-<td>Priority&#x3D;0</td>
-<td>O</td>
-<td>X</td>
-<td>O</td>
-<td>同步</td>
-<td>X</td>
-<td>O</td>
-<td>无</td>
-</tr>
-<tr>
-<td>Hidden</td>
-<td>X</td>
-<td>X</td>
-<td>O</td>
-<td>同步</td>
-<td>X</td>
-<td>O</td>
-<td>Priority&#x3D;0，不可见</td>
-</tr>
-<tr>
-<td>Delayed</td>
-<td>X</td>
-<td>X</td>
-<td>O</td>
-<td>同步</td>
-<td>X</td>
-<td>O</td>
-<td>为Hidden，延迟同步</td>
-</tr>
-<tr>
-<td>Arbiter</td>
-<td>X</td>
-<td>X</td>
-<td>O</td>
-<td>X</td>
-<td>X</td>
-<td>O</td>
-<td>Priority&#x3D;0，无数据</td>
-</tr>
-<tr>
-<td>vote&#x3D;0</td>
-<td>O</td>
-<td>X</td>
-<td>X</td>
-<td>同步</td>
-<td>O</td>
-<td>O</td>
-<td>不能投票</td>
-</tr>
-</tbody></table>
-<p><strong>备注：</strong></p>
-<ul>
-<li>上述Secondary为默认Secondary，即Priority！&#x3D;0、vote！&#x3D;0等；</li>
-<li>Hidden为特殊的Secondary，Delayed为特殊的Hidden</li>
-</ul>
-
+          <p>MongoDB 副本集 Primary 选举</p>
+          <!--noindex-->
+            <div class="post-button">
+              <a class="btn" href="/2022/05/12/MongoDB-Primary%E9%80%89%E4%B8%BE/#more" rel="contents">
+                Read more &raquo;
+              </a>
+            </div>
+          <!--/noindex-->
+        
       
     </div>
 
@@ -739,7 +410,7 @@
               <span class="post-meta-item-text">Posted on</span>
               
 
-              <time title="Created: 2022-05-12 22:40:04 / Modified: 22:40:24" itemprop="dateCreated datePublished" datetime="2022-05-12T22:40:04+08:00">2022-05-12</time>
+              <time title="Created: 2022-05-12 22:40:04 / Modified: 22:57:32" itemprop="dateCreated datePublished" datetime="2022-05-12T22:40:04+08:00">2022-05-12</time>
             </span>
 
           
@@ -753,8 +424,15 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;fmt&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> A <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(a *A)</span></span> pointerFunc() &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;nil pointer function&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init1&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init2&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">foo0</span><span class="params">()</span></span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">    x := <span class="number">1</span></span><br><span class="line">    f := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Printf(<span class="string">&quot;foo0 val = %d\n&quot;</span>, x)</span><br><span class="line">    &#125;</span><br><span class="line">    x = <span class="number">11</span></span><br><span class="line">    <span class="keyword">return</span> f</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">var</span> ap *A</span><br><span class="line">    ap.pointerFunc()</span><br><span class="line"></span><br><span class="line">    val := <span class="number">1997</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">defer</span> fmt.Println(<span class="string">&quot;defer1 val:&quot;</span>, val)</span><br><span class="line">    <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Println(<span class="string">&quot;defer2 val:&quot;</span>, val)</span><br><span class="line">    &#125;()</span><br><span class="line">    val = <span class="number">1998</span></span><br><span class="line"></span><br><span class="line">    a := [<span class="number">6</span>]<span class="type">int</span>&#123;<span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;</span><br><span class="line"></span><br><span class="line">    s := a[<span class="number">0</span>:<span class="number">5</span>]</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">55</span>)</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">100</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">6</span>)</span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">1000</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    foo0()()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> i, v := <span class="keyword">range</span> a &#123;</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            fmt.Println(<span class="string">&quot;goroutine print:&quot;</span>, i, v)</span><br><span class="line">        &#125;()</span><br><span class="line">        v = <span class="number">0</span></span><br><span class="line">    &#125;</span><br><span class="line">    fmt.Println(a)</span><br><span class="line"></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
+          <p>Golang interesting design</p>
+          <!--noindex-->
+            <div class="post-button">
+              <a class="btn" href="/2022/05/12/Interesting-Golang/#more" rel="contents">
+                Read more &raquo;
+              </a>
+            </div>
+          <!--/noindex-->
+        
       
     </div>
 
@@ -798,7 +476,7 @@
               <span class="post-meta-item-text">Posted on</span>
               
 
-              <time title="Created: 2022-05-12 22:38:37 / Modified: 22:39:09" itemprop="dateCreated datePublished" datetime="2022-05-12T22:38:37+08:00">2022-05-12</time>
+              <time title="Created: 2022-05-12 22:38:37 / Modified: 22:56:56" itemprop="dateCreated datePublished" datetime="2022-05-12T22:38:37+08:00">2022-05-12</time>
             </span>
 
           
@@ -813,60 +491,14 @@
 
       
           <p>使用golang net&#x2F;http库发送http请求，最后都是调用 transport的 RoundTrip方法</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> RoundTripper <span class="keyword">interface</span> &#123;</span><br><span class="line">    RoundTrip(*Request) (*Response, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><code>RoundTrip executes a single HTTP transaction, returning the Response for the request req.</code> (RoundTrip 代表一个http事务，给一个请求返回一个响应)<br>说白了，就是你给它一个request,它给你一个response</p>
-<p>下面我们来看一下他的实现，对应源文件<code>net/http/transport.go</code>，我感觉这里是http package里面的精髓所在，go里面一个struct就跟一个类一样，transport这个类长这样的</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Transport <span class="keyword">struct</span> &#123;</span><br><span class="line">    idleMu     sync.Mutex</span><br><span class="line">    wantIdle   <span class="type">bool</span> <span class="comment">// user has requested to close all idle conns</span></span><br><span class="line">    idleConn   <span class="keyword">map</span>[connectMethodKey][]*persistConn</span><br><span class="line">    idleConnCh <span class="keyword">map</span>[connectMethodKey]<span class="keyword">chan</span> *persistConn</span><br><span class="line"></span><br><span class="line">    reqMu       sync.Mutex</span><br><span class="line">    reqCanceler <span class="keyword">map</span>[*Request]<span class="function"><span class="keyword">func</span><span class="params">()</span></span></span><br><span class="line"></span><br><span class="line">    altMu    sync.RWMutex</span><br><span class="line">    altProto <span class="keyword">map</span>[<span class="type">string</span>]RoundTripper <span class="comment">// nil or map of URI scheme =&gt; RoundTripper</span></span><br><span class="line">    <span class="comment">//Dial获取一个tcp 连接，也就是net.Conn结构，你就记住可以往里面写request</span></span><br><span class="line">    <span class="comment">//然后从里面搞到response就行了</span></span><br><span class="line">    Dial <span class="function"><span class="keyword">func</span><span class="params">(network, addr <span class="type">string</span>)</span></span> (net.Conn, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>篇幅所限， https和代理相关的我就忽略了， 两个 <code>map</code> 为 <code>idleConn</code>、<code>idleConnCh</code>，<code>idleConn</code> 是保存从 connectMethodKey （代表着不同的协议 不同的host，也就是不同的请求）到 persistConn 的映射， <code>idleConnCh</code> 用来在并发http请求的时候在多个 goroutine 里面相互发送持久连接，也就是说， 这些持久连接是可以重复利用的， 你的http请求用某个<code>persistConn</code>用完了，通过这个<code>channel</code>发送给其他http请求使用这个<code>persistConn</code>，然后我们找到<code>transport</code>的<code>RoundTrip</code>方法</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(t *Transport)</span></span> RoundTrip(req *Request) (resp *Response, err <span class="type">error</span>) &#123;</span><br><span class="line">    ...</span><br><span class="line">    pconn, err := t.getConn(req, cm)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        t.setReqCanceler(req, <span class="literal">nil</span>)</span><br><span class="line">        req.closeBody()</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> pconn.roundTrip(treq)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>前面对输入的错误处理部分我们忽略， 其实就2步，先获取一个TCP长连接，所谓TCP长连接就是三次握手建立连接后不<code>close</code>而是一直保持重复使用（节约环保） 然后调用这个持久连接persistConn 这个struct的roundTrip方法</p>
-<p>我们跟踪第一步</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(t *Transport)</span></span> getConn(req *Request, cm connectMethod) (*persistConn, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> pc := t.getIdleConn(cm); pc != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="comment">// set request canceler to some non-nil function so we</span></span><br><span class="line">        <span class="comment">// can detect whether it was cleared between now and when</span></span><br><span class="line">        <span class="comment">// we enter roundTrip</span></span><br><span class="line">        t.setReqCanceler(req, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;&#125;)</span><br><span class="line">        <span class="keyword">return</span> pc, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">type</span> dialRes <span class="keyword">struct</span> &#123;</span><br><span class="line">        pc  *persistConn</span><br><span class="line">        err <span class="type">error</span></span><br><span class="line">    &#125;</span><br><span class="line">    dialc := <span class="built_in">make</span>(<span class="keyword">chan</span> dialRes)</span><br><span class="line">    <span class="comment">//定义了一个发送 persistConn的channel</span></span><br><span class="line"></span><br><span class="line">    prePendingDial := prePendingDial</span><br><span class="line">    postPendingDial := postPendingDial</span><br><span class="line"></span><br><span class="line">    handlePendingDial := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        <span class="keyword">if</span> prePendingDial != <span class="literal">nil</span> &#123;</span><br><span class="line">            prePendingDial()</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            <span class="keyword">if</span> v := &lt;-dialc; v.err == <span class="literal">nil</span> &#123;</span><br><span class="line">                t.putIdleConn(v.pc)</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> postPendingDial != <span class="literal">nil</span> &#123;</span><br><span class="line">                postPendingDial()</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;()</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    cancelc := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;)</span><br><span class="line">    t.setReqCanceler(req, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; <span class="built_in">close</span>(cancelc) &#125;)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 启动了一个goroutine, 这个goroutine 获取里面调用dialConn搞到</span></span><br><span class="line">    <span class="comment">// persistConn, 然后发送到上面建立的channel  dialc里面，</span></span><br><span class="line">    <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        pc, err := t.dialConn(cm)</span><br><span class="line">        dialc &lt;- dialRes&#123;pc, err&#125;</span><br><span class="line">    &#125;()</span><br><span class="line"></span><br><span class="line">    idleConnCh := t.getIdleConnCh(cm)</span><br><span class="line">    <span class="keyword">select</span> &#123;</span><br><span class="line">    <span class="keyword">case</span> v := &lt;-dialc:</span><br><span class="line">        <span class="comment">// dialc 我们的 dial 方法先搞到通过 dialc通道发过来了</span></span><br><span class="line">        <span class="keyword">return</span> v.pc, v.err</span><br><span class="line">    <span class="keyword">case</span> pc := &lt;-idleConnCh:</span><br><span class="line">        <span class="comment">// 这里代表其他的http请求用完了归还的persistConn通过idleConnCh这个</span></span><br><span class="line">        <span class="comment">// channel发送来的</span></span><br><span class="line">        handlePendingDial()</span><br><span class="line">        <span class="keyword">return</span> pc, <span class="literal">nil</span></span><br><span class="line">    <span class="keyword">case</span> &lt;-req.Cancel:</span><br><span class="line">        handlePendingDial()</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, errors.New(<span class="string">&quot;net/http: request canceled while waiting for connection&quot;</span>)</span><br><span class="line">    <span class="keyword">case</span> &lt;-cancelc:</span><br><span class="line">        handlePendingDial()</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, errors.New(<span class="string">&quot;net/http: request canceled while waiting for connection&quot;</span>)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这里面的代码写的很有讲究 , 上面代码里面我也注释了， 定义了一个发送 <code>persistConn</code>的channel<code> dialc</code>， 启动了一个<code>goroutine</code>, 这个<code>goroutine</code> 获取里面调用<code>dialConn</code>搞到<code>persistConn</code>, 然后发送到<code>dialc</code>里面，主协程<code>goroutine</code>在 <code>select</code>里面监听多个<code>channel</code>,看看哪个通道里面先发过来 <code>persistConn</code>，就用哪个，然后<code>return</code>。</p>
-<p>这里要注意的是 <code>idleConnCh</code> 这个通道里面发送来的是其他的http请求用完了归还的<code>persistConn</code>， 如果从这个通道里面搞到了，<code>dialc</code>这个通道也等着发呢，不能浪费，就通过<code>handlePendingDial</code>这个方法把<code>dialc</code>通道里面的<code>persistConn</code>也发到<code>idleConnCh</code>，等待后续给其他http请求使用。</p>
-<p>还有就是，读者可以翻一下代码，每个新建的persistConn的时候都把tcp连接里地输入流，和输出流用br（<code>br *bufio.Reader</code>）,和bw(<code>bw *bufio.Writer</code>)包装了一下，往bw写就写到tcp输入流里面了，读输出流也是通过br读，并启动了读循环和写循环</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">pconn.br = bufio.NewReader(noteEOFReader&#123;pconn.conn, &amp;pconn.sawEOF&#125;)</span><br><span class="line">pconn.bw = bufio.NewWriter(pconn.conn)</span><br><span class="line">go pconn.readLoop()</span><br><span class="line">go pconn.writeLoop()</span><br></pre></td></tr></table></figure>
-
-<p>我们跟踪第二步<code>pconn.roundTrip</code> 调用这个持久连接persistConn 这个struct的<code>roundTrip</code>方法。<br>先瞄一下 <code>persistConn</code> 这个struct</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> persistConn <span class="keyword">struct</span> &#123;</span><br><span class="line">    t        *Transport</span><br><span class="line">    cacheKey connectMethodKey</span><br><span class="line">    conn     net.Conn</span><br><span class="line">    tlsState *tls.ConnectionState</span><br><span class="line">    br       *bufio.Reader       <span class="comment">// 从tcp输出流里面读</span></span><br><span class="line">    sawEOF   <span class="type">bool</span>                <span class="comment">// whether we&#x27;ve seen EOF from conn; owned by readLoop</span></span><br><span class="line">    bw       *bufio.Writer       <span class="comment">// 写到tcp输入流</span></span><br><span class="line">     reqch    <span class="keyword">chan</span> requestAndChan <span class="comment">// 主goroutine 往channnel里面写，读循环从</span></span><br><span class="line">                                 <span class="comment">// channnel里面接受</span></span><br><span class="line">    writech  <span class="keyword">chan</span> writeRequest   <span class="comment">// 主goroutine 往channnel里面写</span></span><br><span class="line">                                 <span class="comment">// 写循环从channel里面接受</span></span><br><span class="line">    closech  <span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;       <span class="comment">// 通知关闭tcp连接的channel</span></span><br><span class="line"></span><br><span class="line">    writeErrCh <span class="keyword">chan</span> <span class="type">error</span></span><br><span class="line"></span><br><span class="line">    lk                   sync.Mutex <span class="comment">// guards following fields</span></span><br><span class="line">    numExpectedResponses <span class="type">int</span></span><br><span class="line">    closed               <span class="type">bool</span> <span class="comment">// whether conn has been closed</span></span><br><span class="line">    broken               <span class="type">bool</span> <span class="comment">// an error has happened on this connection; marked broken so it&#x27;s not reused.</span></span><br><span class="line">    canceled             <span class="type">bool</span> <span class="comment">// whether this conn was broken due a CancelRequest</span></span><br><span class="line">    <span class="comment">// mutateHeaderFunc is an optional func to modify extra</span></span><br><span class="line">    <span class="comment">// headers on each outbound request before it&#x27;s written. (the</span></span><br><span class="line">    <span class="comment">// original Request given to RoundTrip is not modified)</span></span><br><span class="line">    mutateHeaderFunc <span class="function"><span class="keyword">func</span><span class="params">(Header)</span></span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>里面是各种channel, 用的是出神入化， 各位要好好理解一下， 我这里画一下</p>
-<p>这里有三个goroutine，分别用三个圆圈表示， channel用箭头表示</p>
-<p>有两个channel <code>writeRequest</code> 和 <code>requestAndChan</code></p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> writeRequest <span class="keyword">struct</span> &#123;</span><br><span class="line">    req *transportRequest</span><br><span class="line">    ch  <span class="keyword">chan</span>&lt;- <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>主goroutine 往writeRequest里面写，写循环从writeRequest里面接受</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> responseAndError <span class="keyword">struct</span> &#123;</span><br><span class="line">    res *Response</span><br><span class="line">    err <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> requestAndChan <span class="keyword">struct</span> &#123;</span><br><span class="line">    req *Request</span><br><span class="line">    ch  <span class="keyword">chan</span> responseAndError</span><br><span class="line">    addedGzip <span class="type">bool</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>主goroutine 往requestAndChan里面写，读循环从requestAndChan里面接受。</p>
-<p>注意这里的channel都是双向channel，也就是channel 的struct里面有一个chan类型的字段， 比如 <code>reqch chan requestAndChan</code> 这里的 requestAndChan 里面的 <code>ch chan responseAndError</code>。</p>
-<p>这个是很牛叉，主 goroutine 通过 reqch 发送requestAndChan 给读循环，然后读循环搞到response后通过 requestAndChan 里面的通道responseAndError把response返给主goroutine，所以我画了一个双向箭头。</p>
-<p>我们研究一下代码，我理解下来其实就是三个goroutine通过channel互相协作的过程。</p>
-<p>主循环：</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(pc *persistConn)</span></span> roundTrip(req *transportRequest) (resp *Response, err <span class="type">error</span>) &#123;</span><br><span class="line">    ... 忽略</span><br><span class="line">    <span class="comment">// Write the request concurrently with waiting for a response,</span></span><br><span class="line">    <span class="comment">// in case the server decides to reply before reading our full</span></span><br><span class="line">    <span class="comment">// request body.</span></span><br><span class="line">    writeErrCh := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">error</span>, <span class="number">1</span>)</span><br><span class="line">    pc.writech &lt;- writeRequest&#123;req, writeErrCh&#125;</span><br><span class="line">    <span class="comment">//把request发送给写循环</span></span><br><span class="line">    resc := <span class="built_in">make</span>(<span class="keyword">chan</span> responseAndError, <span class="number">1</span>)</span><br><span class="line">    pc.reqch &lt;- requestAndChan&#123;req.Request, resc, requestedGzip&#125;</span><br><span class="line">    <span class="comment">//发送给读循环</span></span><br><span class="line">    <span class="keyword">var</span> re responseAndError</span><br><span class="line">    <span class="keyword">var</span> respHeaderTimer &lt;-<span class="keyword">chan</span> time.Time</span><br><span class="line">    cancelChan := req.Request.Cancel</span><br><span class="line">WaitResponse:</span><br><span class="line">    <span class="keyword">for</span> &#123;</span><br><span class="line">        <span class="keyword">select</span> &#123;</span><br><span class="line">        <span class="keyword">case</span> err := &lt;-writeErrCh:</span><br><span class="line">            <span class="keyword">if</span> isNetWriteError(err) &#123;</span><br><span class="line">                <span class="comment">//写循环通过这个channel报告错误</span></span><br><span class="line">                <span class="keyword">select</span> &#123;</span><br><span class="line">                <span class="keyword">case</span> re = &lt;-resc:</span><br><span class="line">                    pc.<span class="built_in">close</span>()</span><br><span class="line">                    <span class="keyword">break</span> WaitResponse</span><br><span class="line">                <span class="keyword">case</span> &lt;-time.After(<span class="number">50</span> * time.Millisecond):</span><br><span class="line">                    <span class="comment">// Fall through.</span></span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                re = responseAndError&#123;<span class="literal">nil</span>, err&#125;</span><br><span class="line">                pc.<span class="built_in">close</span>()</span><br><span class="line">                <span class="keyword">break</span> WaitResponse</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> d := pc.t.ResponseHeaderTimeout; d &gt; <span class="number">0</span> &#123;</span><br><span class="line">                timer := time.NewTimer(d)</span><br><span class="line">                <span class="keyword">defer</span> timer.Stop() <span class="comment">// prevent leaks</span></span><br><span class="line">                respHeaderTimer = timer.C</span><br><span class="line">            &#125;</span><br><span class="line">        <span class="keyword">case</span> &lt;-pc.closech:</span><br><span class="line">            <span class="comment">// 如果长连接挂了， 这里的channel有数据， 进入这个case, 进行处理</span></span><br><span class="line"></span><br><span class="line">            <span class="keyword">select</span> &#123;</span><br><span class="line">            <span class="keyword">case</span> re = &lt;-resc:</span><br><span class="line">                <span class="keyword">if</span> fn := testHookPersistConnClosedGotRes; fn != <span class="literal">nil</span> &#123;</span><br><span class="line">                    fn()</span><br><span class="line">                &#125;</span><br><span class="line">            <span class="keyword">default</span>:</span><br><span class="line">                re = responseAndError&#123;err: errClosed&#125;</span><br><span class="line">                <span class="keyword">if</span> pc.isCanceled() &#123;</span><br><span class="line">                    re = responseAndError&#123;err: errRequestCanceled&#125;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">break</span> WaitResponse</span><br><span class="line">        <span class="keyword">case</span> &lt;-respHeaderTimer:</span><br><span class="line">            pc.<span class="built_in">close</span>()</span><br><span class="line">            re = responseAndError&#123;err: errTimeout&#125;</span><br><span class="line">            <span class="keyword">break</span> WaitResponse</span><br><span class="line">            <span class="comment">// 如果timeout，这里的channel有数据， break掉for循环</span></span><br><span class="line">        <span class="keyword">case</span> re = &lt;-resc:</span><br><span class="line">            <span class="keyword">break</span> WaitResponse</span><br><span class="line">           <span class="comment">// 获取到读循环的response, break掉 for循环</span></span><br><span class="line">        <span class="keyword">case</span> &lt;-cancelChan:</span><br><span class="line">            pc.t.CancelRequest(req.Request)</span><br><span class="line">            cancelChan = <span class="literal">nil</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> re.err != <span class="literal">nil</span> &#123;</span><br><span class="line">        pc.t.setReqCanceler(req.Request, <span class="literal">nil</span>)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> re.res, re.err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这段代码主要就干了三件事</p>
-<ul>
-<li>主goroutine -&gt;requestAndChan -&gt; 读循环goroutine</li>
-<li>主goroutine -&gt;writeRequest-&gt; 写循环goroutine</li>
-<li>主goroutine 通过select 监听各个channel上的数据， 比如请求取消， timeout，长连接挂了，写流出错，读流出错， 都是其他goroutine 发送过来的， 跟中断一样，然后相应处理，上面也提到了，有些channel是主goroutine通过channel发送给其他goroutine的struct里面包含的channel, 比如 <code>case err := &lt;-writeErrCh:</code> <code>case re = &lt;-resc:</code></li>
-</ul>
-<p>读循环代码：</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(pc *persistConn)</span></span> readLoop() &#123;</span><br><span class="line"></span><br><span class="line">    ... 忽略</span><br><span class="line">    alive := <span class="literal">true</span></span><br><span class="line">    <span class="keyword">for</span> alive &#123;</span><br><span class="line"></span><br><span class="line">        ... 忽略</span><br><span class="line">        rc := &lt;-pc.reqch</span><br><span class="line"></span><br><span class="line">        <span class="keyword">var</span> resp *Response</span><br><span class="line">        <span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">            resp, err = ReadResponse(pc.br, rc.req)</span><br><span class="line">            <span class="keyword">if</span> err == <span class="literal">nil</span> &amp;&amp; resp.StatusCode == <span class="number">100</span> &#123;</span><br><span class="line">                <span class="comment">//100  Continue  初始的请求已经接受，客户应当继续发送请求的其</span></span><br><span class="line">                <span class="comment">// 余部分</span></span><br><span class="line">                resp, err = ReadResponse(pc.br, rc.req)</span><br><span class="line">                <span class="comment">// 读pc.br（tcp输出流）中的数据，这里的代码在response里面</span></span><br><span class="line">                <span class="comment">//解析statusCode，头字段， 转成标准的内存中的response 类型</span></span><br><span class="line">                <span class="comment">//  http在tcp数据流里面，head和body以 /r/n/r/n分开， 各个头</span></span><br><span class="line">                <span class="comment">// 字段 以/r/n分开</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> resp != <span class="literal">nil</span> &#123;</span><br><span class="line">            resp.TLS = pc.tlsState</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        ...忽略</span><br><span class="line">        <span class="comment">//上面处理一些http协议的一些逻辑行为，</span></span><br><span class="line">        rc.ch &lt;- responseAndError&#123;resp, err&#125; <span class="comment">//把读到的response返回给</span></span><br><span class="line">                                             <span class="comment">//主goroutine</span></span><br><span class="line"></span><br><span class="line">        .. 忽略</span><br><span class="line">        <span class="comment">//忽略部分， 处理cancel req中断， 发送idleConnCh归还pc（持久连接）到持久连接池中（map）</span></span><br><span class="line">    pc.<span class="built_in">close</span>()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>无关代码忽略，这段代码主要干了一件事情</p>
-<blockquote>
-<p>读循环goroutine 通过channel requestAndChan 接受主goroutine发送的request(<code>rc := &lt;-pc.reqch</code>), 并从tcp输出流中读取response， 然后反序列化到结构体中， 最后通过channel 返给主goroutine (<code>rc.ch &lt;- responseAndError&#123;resp, err&#125; </code>)</p>
-</blockquote>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(pc *persistConn)</span></span> writeLoop() &#123;</span><br><span class="line">    <span class="keyword">for</span> &#123;</span><br><span class="line">        <span class="keyword">select</span> &#123;</span><br><span class="line">        <span class="keyword">case</span> wr := &lt;-pc.writech:   <span class="comment">//接受主goroutine的 request</span></span><br><span class="line">            <span class="keyword">if</span> pc.isBroken() &#123;</span><br><span class="line">                wr.ch &lt;- errors.New(<span class="string">&quot;http: can&#x27;t write HTTP request on broken connection&quot;</span>)</span><br><span class="line">                <span class="keyword">continue</span></span><br><span class="line">            &#125;</span><br><span class="line">            err := wr.req.Request.write(pc.bw, pc.isProxy, wr.req.extra)   <span class="comment">//写入tcp输入流</span></span><br><span class="line">            <span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">                err = pc.bw.Flush()</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                pc.markBroken()</span><br><span class="line">                wr.req.Request.closeBody()</span><br><span class="line">            &#125;</span><br><span class="line">            pc.writeErrCh &lt;- err</span><br><span class="line">            wr.ch &lt;- err         <span class="comment">//  出错的时候返给主goroutineto</span></span><br><span class="line">        <span class="keyword">case</span> &lt;-pc.closech:</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>写循环就更简单了，select channel中主gouroutine的request，然后写入tcp输入流，如果出错了，channel 通知调用者。</p>
-<p>整体看下来，过程都很简单，但是代码中有很多值得我们学习的地方，比如高并发请求如何复用tcp连接，这里是连接池的做法，如果使用多个 goroutine相互协作完成一个http请求，出现错误的时候如何通知调用者中断错误，代码风格也有很多可以借鉴的地方。</p>
-
+          <!--noindex-->
+            <div class="post-button">
+              <a class="btn" href="/2022/05/12/Golang-HTTP-transport/#more" rel="contents">
+                Read more &raquo;
+              </a>
+            </div>
+          <!--/noindex-->
+        
       
     </div>
 
@@ -910,7 +542,7 @@
               <span class="post-meta-item-text">Posted on</span>
               
 
-              <time title="Created: 2022-05-12 22:36:23 / Modified: 22:37:13" itemprop="dateCreated datePublished" datetime="2022-05-12T22:36:23+08:00">2022-05-12</time>
+              <time title="Created: 2022-05-12 22:36:23 / Modified: 22:56:47" itemprop="dateCreated datePublished" datetime="2022-05-12T22:36:23+08:00">2022-05-12</time>
             </span>
 
           
@@ -925,9 +557,14 @@
 
       
           <p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
-<p>I construct a broken server. The server will always send 100-continue and an incorrect header to proxy. In ReverseProxy，transport.RoundTrip(outreq) will receive an error and don’t keep the connection to client. After the connection is closed, (*conn).finalFlush will assign (*conn).bufw &#x3D; nil. At the same time, writeLoop probably doesn’t exit and may writeBody. The body here is an *expectContinueReader. When writeLoop first reads it, it writes 100-continue to client. But (*expectContinueReader).resp.conn.bufw &#x3D;&#x3D; nil, so it leads to panic. If writeBody happens before assign，it leads to data race.</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;io&quot;</span></span><br><span class="line">    <span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http/httputil&quot;</span></span><br><span class="line">    <span class="string">&quot;net/url&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> zeroReader <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(zeroReader)</span></span> Read(p []<span class="type">byte</span>) (<span class="type">int</span>, <span class="type">error</span>) &#123; <span class="keyword">return</span> <span class="built_in">len</span>(p), <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> infinite io.Reader = &amp;zeroReader&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">brokenBackend</span><span class="params">()</span></span> &#123;</span><br><span class="line">    http.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        conn, bfw, err := w.(http.Hijacker).Hijack()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;hijack failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// Tell client net/http.(*persistConn).writeLoop() to continue writeBody.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;HTTP/1.1 100 Continue\r\n\r\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Send client a wrong format header to make client net/http.(*persistConn).readLoop() readResponse failed.</span></span><br><span class="line">        <span class="comment">// Then client net/http.(*persistConn).roundTrip() will return an error and probably doesn&#x27;t wait</span></span><br><span class="line">        <span class="comment">// net/http.(*persistConn).writeLoop() to exit.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;BROKEN-HEADER\r\n\r\n&quot;</span>)</span><br><span class="line">        bfw.Flush()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Keep this connection for 1s so that the client doesn&#x27;t think the connection is down immediately.</span></span><br><span class="line">        &lt;-time.AfterFunc(time.Second, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; conn.Close() &#125;).C</span><br><span class="line">    &#125;)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8081&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Proxy just forwards requests to the broken backend.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">proxy</span><span class="params">()</span></span> &#123;</span><br><span class="line">    target, err := url.Parse(<span class="string">&quot;http://localhost:8081&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;parse target url failed: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">    p := httputil.NewSingleHostReverseProxy(target)</span><br><span class="line">    p.ErrorLog = log.New(ioutil.Discard, <span class="string">&quot;&quot;</span>, <span class="number">0</span>)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, p)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> brokenBackend()</span><br><span class="line">    <span class="keyword">go</span> proxy()</span><br><span class="line">    <span class="comment">// Wait backend and proxy server to start</span></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> <span class="keyword">range</span> time.Tick(time.Millisecond * <span class="number">100</span>) &#123;</span><br><span class="line">        req, err := http.NewRequest(<span class="string">&quot;PUT&quot;</span>, <span class="string">&quot;http://localhost:8080&quot;</span>, io.LimitReader(infinite, <span class="number">65536</span>))</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;create request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        req.Header.Set(<span class="string">&quot;Expect&quot;</span>, <span class="string">&quot;100-continue&quot;</span>)</span><br><span class="line">        _, err = http.DefaultClient.Do(req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;do request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
+          <!--noindex-->
+            <div class="post-button">
+              <a class="btn" href="/2022/05/12/bug-of-Golang-httputil-ReverseProxy/#more" rel="contents">
+                Read more &raquo;
+              </a>
+            </div>
+          <!--/noindex-->
+        
       
     </div>
 
@@ -977,7 +614,7 @@
                   <i class="far fa-calendar-check"></i>
                 </span>
                 <span class="post-meta-item-text">Edited on</span>
-                <time title="Modified: 2022-05-12 22:15:08" itemprop="dateModified" datetime="2022-05-12T22:15:08+08:00">2022-05-12</time>
+                <time title="Modified: 2022-05-12 22:58:47" itemprop="dateModified" datetime="2022-05-12T22:58:47+08:00">2022-05-12</time>
               </span>
 
           
