@@ -312,6 +312,12 @@
       </tags>
   </entry>
   <entry>
+    <title>Hello World</title>
+    <url>/2022/04/10/hello-world/</url>
+    <content><![CDATA[<p>Hello World!</p>
+]]></content>
+  </entry>
+  <entry>
     <title>bug of Golang httputil.ReverseProxy</title>
     <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
     <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
@@ -348,7 +354,7 @@
 <ul>
 <li>在高数据冲突场景下有较高的事务中止率，浪费计算资源（2PL在此场景下事务中止率也很高，但能够提前中止，不用等到事务提交时）</li>
 </ul>
-<h3 id="在验证阶段使用Paxos提交协议发现冲突"><a href="#在验证阶段使用Paxos提交协议发现冲突" class="headerlink" title="在验证阶段使用Paxos提交协议发现冲突"></a>在验证阶段使用Paxos提交协议发现冲突</h3><h4 id="Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011"><a href="#Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011" class="headerlink" title="Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011"></a>Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011</h4><p><img src="/./OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/megastore.png" alt="megastore"></p>
+<h3 id="在验证阶段使用Paxos提交协议发现冲突"><a href="#在验证阶段使用Paxos提交协议发现冲突" class="headerlink" title="在验证阶段使用Paxos提交协议发现冲突"></a>在验证阶段使用Paxos提交协议发现冲突</h3><h4 id="Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011"><a href="#Megastore-Providing-Scalable-Highly-Available-Storage-for-Interactive-Services-CIDR-2011" class="headerlink" title="Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011"></a>Megastore: Providing Scalable, Highly Available Storage for Interactive Services CIDR 2011</h4><p><img src="/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/megastore.png" alt="megastore"></p>
 <p>Megastore是少有的在内核层实现OCC的生产级分布式数据库系统，在Entity Group的数据分区级别使用MVOCC实现了串行化隔离级别的事务，同一分区一次只能执行一个事务，分布多副本间可以并发执行事务。一个OCC事务三个阶段的实现大致描述如下：</p>
 <p>1、读取阶段</p>
 <p>① 在任意副本均可发起强一致读；数据更新缓存在应用的事务私有内存</p>
@@ -443,7 +449,7 @@
 <li>系统无死锁或永久阻塞点</li>
 </ul>
 <p>OCC在这种场景下是有技术优势的，因此，论文致力于实现一个消除2PC中的锁机制且大幅降低事务误中止率的分布式数据库系统MaaT，其基本思想如下：</p>
-<p><img src="/./OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/maat.png" alt="Maat"></p>
+<p><img src="/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/maat.png" alt="Maat"></p>
 <p>基本数据结构</p>
 <ul>
 <li>在事务访问的每个结点上需要维护内存事务表，记录事务的提交时间戳区间及当前状态（runing&#x2F;validated&#x2F;committed&#x2F;aborted）</li>
@@ -495,11 +501,5 @@
       <tags>
         <tag>OCC</tag>
       </tags>
-  </entry>
-  <entry>
-    <title>Hello World</title>
-    <url>/2022/04/10/hello-world/</url>
-    <content><![CDATA[<p>Hello World!</p>
-]]></content>
   </entry>
 </search>
