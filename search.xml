@@ -1,24 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
-    <title>Interesting Golang</title>
-    <url>/2022/05/12/Interesting-Golang/</url>
-    <content><![CDATA[<p>Golang interesting design</p>
-<span id="more"></span>
-
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;fmt&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> A <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(a *A)</span></span> pointerFunc() &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;nil pointer function&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init1&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init2&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">foo0</span><span class="params">()</span></span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">    x := <span class="number">1</span></span><br><span class="line">    f := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Printf(<span class="string">&quot;foo0 val = %d\n&quot;</span>, x)</span><br><span class="line">    &#125;</span><br><span class="line">    x = <span class="number">11</span></span><br><span class="line">    <span class="keyword">return</span> f</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">var</span> ap *A</span><br><span class="line">    ap.pointerFunc()</span><br><span class="line"></span><br><span class="line">    val := <span class="number">1997</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">defer</span> fmt.Println(<span class="string">&quot;defer1 val:&quot;</span>, val)</span><br><span class="line">    <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Println(<span class="string">&quot;defer2 val:&quot;</span>, val)</span><br><span class="line">    &#125;()</span><br><span class="line">    val = <span class="number">1998</span></span><br><span class="line"></span><br><span class="line">    a := [<span class="number">6</span>]<span class="type">int</span>&#123;<span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;</span><br><span class="line"></span><br><span class="line">    s := a[<span class="number">0</span>:<span class="number">5</span>]</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">55</span>)</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">100</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">6</span>)</span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">1000</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    foo0()()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> i, v := <span class="keyword">range</span> a &#123;</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            fmt.Println(<span class="string">&quot;goroutine print:&quot;</span>, i, v)</span><br><span class="line">        &#125;()</span><br><span class="line">        v = <span class="number">0</span></span><br><span class="line">    &#125;</span><br><span class="line">    fmt.Println(a)</span><br><span class="line"></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-]]></content>
-      <tags>
-        <tag>Golang</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Golang HTTP transport</title>
     <url>/2022/05/12/Golang-HTTP-transport/</url>
     <content><![CDATA[<p>使用golang net&#x2F;http库发送http请求，最后都是调用 transport的 RoundTrip方法</p>
-<span id="more"></span>
-
 <figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">type</span> RoundTripper <span class="keyword">interface</span> &#123;</span><br><span class="line">    RoundTrip(*Request) (*Response, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<span id="more"></span>
 
 <p><code>RoundTrip executes a single HTTP transaction, returning the Response for the request req.</code> (RoundTrip 代表一个http事务，给一个请求返回一个响应)<br>说白了，就是你给它一个request,它给你一个response</p>
 <p>下面我们来看一下他的实现，对应源文件<code>net/http/transport.go</code>，我感觉这里是http package里面的精髓所在，go里面一个struct就跟一个类一样，transport这个类长这样的</p>
@@ -79,14 +67,13 @@
   <entry>
     <title>MongoDB Primary选举</title>
     <url>/2022/05/12/MongoDB-Primary%E9%80%89%E4%B8%BE/</url>
-    <content><![CDATA[<p>MongoDB 副本集 Primary 选举</p>
-<span id="more"></span>
-
-<h3 id="副本集简介"><a href="#副本集简介" class="headerlink" title="副本集简介"></a>副本集简介</h3><p>Mongodb副本集由一组Mongod实例（进程）组成，包含一个Primary节点和多个Secondary节点，Mongodb Driver（客户端）的所有数据都写入Primary，Secondary从Primary同步写入的数据，以保持复制集内所有成员存储相同的数据集，提供数据的高可用。副本集带来的架构优点主要有：</p>
+    <content><![CDATA[<h3 id="副本集简介"><a href="#副本集简介" class="headerlink" title="副本集简介"></a>副本集简介</h3><p>Mongodb副本集由一组Mongod实例（进程）组成，包含一个Primary节点和多个Secondary节点，Mongodb Driver（客户端）的所有数据都写入Primary，Secondary从Primary同步写入的数据，以保持复制集内所有成员存储相同的数据集，提供数据的高可用。副本集带来的架构优点主要有：</p>
 <ul>
 <li>集群高可用</li>
 <li>读写可分离</li>
 </ul>
+<span id="more"></span>
+
 <ol>
 <li><strong>Primary:</strong> 副本集的<strong>主节点</strong>，可读写，<strong>唯一可以进行写操作的节点</strong>，由集群自行选举出来。</li>
 <li><strong>Secondary：</strong> 正常情况下，Seconary会参与Primary选举（自身也可能会被选为Primary），并<strong>从Primary同步最新写入的数据</strong>，以保证与Primary存储相同的数据。Secondary<strong>可以提供读服务</strong>，增加Secondary节点可以提供副本集的读服务能力，提升副本集的可用性。</li>
@@ -215,14 +202,134 @@
       </tags>
   </entry>
   <entry>
+    <title>Paper accepted by VLDB 2022</title>
+    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
+    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
+]]></content>
+      <tags>
+        <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Interesting Golang</title>
+    <url>/2022/05/12/Interesting-Golang/</url>
+    <content><![CDATA[<p>Golang interesting design</p>
+<span id="more"></span>
+
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;fmt&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> A <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(a *A)</span></span> pointerFunc() &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;nil pointer function&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init1&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init2&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">foo0</span><span class="params">()</span></span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">    x := <span class="number">1</span></span><br><span class="line">    f := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Printf(<span class="string">&quot;foo0 val = %d\n&quot;</span>, x)</span><br><span class="line">    &#125;</span><br><span class="line">    x = <span class="number">11</span></span><br><span class="line">    <span class="keyword">return</span> f</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">var</span> ap *A</span><br><span class="line">    ap.pointerFunc()</span><br><span class="line"></span><br><span class="line">    val := <span class="number">1997</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">defer</span> fmt.Println(<span class="string">&quot;defer1 val:&quot;</span>, val)</span><br><span class="line">    <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Println(<span class="string">&quot;defer2 val:&quot;</span>, val)</span><br><span class="line">    &#125;()</span><br><span class="line">    val = <span class="number">1998</span></span><br><span class="line"></span><br><span class="line">    a := [<span class="number">6</span>]<span class="type">int</span>&#123;<span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;</span><br><span class="line"></span><br><span class="line">    s := a[<span class="number">0</span>:<span class="number">5</span>]</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">55</span>)</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">100</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">6</span>)</span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">1000</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    foo0()()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> i, v := <span class="keyword">range</span> a &#123;</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            fmt.Println(<span class="string">&quot;goroutine print:&quot;</span>, i, v)</span><br><span class="line">        &#125;()</span><br><span class="line">        v = <span class="number">0</span></span><br><span class="line">    &#125;</span><br><span class="line">    fmt.Println(a)</span><br><span class="line"></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+]]></content>
+      <tags>
+        <tag>Golang</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>NewSQL 主流实现</title>
+    <url>/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/</url>
+    <content><![CDATA[<h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
+<h3 id="MVCC-OCC-x3D-SSI"><a href="#MVCC-OCC-x3D-SSI" class="headerlink" title="MVCC+OCC&#x3D;SSI"></a>MVCC+OCC&#x3D;SSI</h3><p>基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别</p>
+<h3 id="NewSQL-主流系统"><a href="#NewSQL-主流系统" class="headerlink" title="NewSQL 主流系统"></a>NewSQL 主流系统</h3><p>原生实现</p>
+<ul>
+<li>CockroachDB</li>
+<li>YugaByteDB</li>
+</ul>
+<p>NoSQL+ACID+SQL</p>
+<ul>
+<li>TiDB</li>
+<li>Trafodion</li>
+</ul>
+<span id="more"></span>
+
+<p>事务的并发控制是为了实现事务的调度，一个正确、高效的事务调度应满足如下属性：</p>
+<ul>
+<li>可串行化</li>
+</ul>
+<p>多个并发事务的调度S与一个串行化的调度产生相同的结果，则称这个调度S是可串行化的。在数据库实现中，一般使用冲突可串行化技术。</p>
+<ul>
+<li>可恢复性</li>
+</ul>
+<p>已经提交的事务没有读过被终止的事务写过的数据，防止脏读异常。</p>
+<ul>
+<li>避免级联终止</li>
+</ul>
+<p>避免由于事务T1的终止而导致事务T2的终止。</p>
+<ul>
+<li>严格性</li>
+</ul>
+<p>先发生写操作的事务的提交或终止应先于其它冲突事务的提交或终止。</p>
+<table>
+<thead>
+<tr>
+<th>生产级NewSQL数据库</th>
+<th>并发控制</th>
+<th>隔离级别</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Spanner</td>
+<td>MVCC+SS2PL</td>
+<td>Linearizability</td>
+</tr>
+<tr>
+<td>Oceanbase 1.0</td>
+<td>MVCC+SS2PL</td>
+<td>RC</td>
+</tr>
+<tr>
+<td>CockroachDB 1.0</td>
+<td>MVCC+T&#x2F;O</td>
+<td>SSI</td>
+</tr>
+<tr>
+<td>TiDB 1.0</td>
+<td>MVCC+SS2PL</td>
+<td>SI</td>
+</tr>
+<tr>
+<td>FoundationDB 5.1</td>
+<td>MVCC+OCC</td>
+<td>SSI</td>
+</tr>
+</tbody></table>
+<p>FoundationDB 的 OCC 实现也有一些限制，比如官方文档对 KV 和事务的大小及时长做出了如下限制：</p>
+<ul>
+<li>key不超过10K；value不超过100K；事务不超过10M（包括所有读、写涉及的KV）</li>
+<li>仅支持运行时间不超过5s的读写事务</li>
+</ul>
+]]></content>
+      <tags>
+        <tag>NewSQL</tag>
+        <tag>OCC</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>TKDE Reviewer Invitation</title>
+    <url>/2022/05/10/TKDE-Reviewer-Invitation/</url>
+    <content><![CDATA[<p><strong>TKDE</strong>(IEEE Transactions on Knowledge and Data Engineering) Reviewer <a href="https://publons.com/researcher/5190849/zerui-ge/">https://publons.com/researcher/5190849/zerui-ge/</a></p>
+]]></content>
+      <tags>
+        <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>bug of Golang httputil.ReverseProxy</title>
+    <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
+    <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
+<span id="more"></span>
+
+<p>I construct a broken server. The server will always send 100-continue and an incorrect header to proxy. In ReverseProxy，transport.RoundTrip(outreq) will receive an error and don’t keep the connection to client. After the connection is closed, (*conn).finalFlush will assign (*conn).bufw &#x3D; nil. At the same time, writeLoop probably doesn’t exit and may writeBody. The body here is an *expectContinueReader. When writeLoop first reads it, it writes 100-continue to client. But (*expectContinueReader).resp.conn.bufw &#x3D;&#x3D; nil, so it leads to panic. If writeBody happens before assign，it leads to data race.</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;io&quot;</span></span><br><span class="line">    <span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http/httputil&quot;</span></span><br><span class="line">    <span class="string">&quot;net/url&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> zeroReader <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(zeroReader)</span></span> Read(p []<span class="type">byte</span>) (<span class="type">int</span>, <span class="type">error</span>) &#123; <span class="keyword">return</span> <span class="built_in">len</span>(p), <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> infinite io.Reader = &amp;zeroReader&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">brokenBackend</span><span class="params">()</span></span> &#123;</span><br><span class="line">    http.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        conn, bfw, err := w.(http.Hijacker).Hijack()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;hijack failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// Tell client net/http.(*persistConn).writeLoop() to continue writeBody.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;HTTP/1.1 100 Continue\r\n\r\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Send client a wrong format header to make client net/http.(*persistConn).readLoop() readResponse failed.</span></span><br><span class="line">        <span class="comment">// Then client net/http.(*persistConn).roundTrip() will return an error and probably doesn&#x27;t wait</span></span><br><span class="line">        <span class="comment">// net/http.(*persistConn).writeLoop() to exit.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;BROKEN-HEADER\r\n\r\n&quot;</span>)</span><br><span class="line">        bfw.Flush()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Keep this connection for 1s so that the client doesn&#x27;t think the connection is down immediately.</span></span><br><span class="line">        &lt;-time.AfterFunc(time.Second, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; conn.Close() &#125;).C</span><br><span class="line">    &#125;)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8081&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Proxy just forwards requests to the broken backend.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">proxy</span><span class="params">()</span></span> &#123;</span><br><span class="line">    target, err := url.Parse(<span class="string">&quot;http://localhost:8081&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;parse target url failed: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">    p := httputil.NewSingleHostReverseProxy(target)</span><br><span class="line">    p.ErrorLog = log.New(ioutil.Discard, <span class="string">&quot;&quot;</span>, <span class="number">0</span>)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, p)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> brokenBackend()</span><br><span class="line">    <span class="keyword">go</span> proxy()</span><br><span class="line">    <span class="comment">// Wait backend and proxy server to start</span></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> <span class="keyword">range</span> time.Tick(time.Millisecond * <span class="number">100</span>) &#123;</span><br><span class="line">        req, err := http.NewRequest(<span class="string">&quot;PUT&quot;</span>, <span class="string">&quot;http://localhost:8080&quot;</span>, io.LimitReader(infinite, <span class="number">65536</span>))</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;create request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        req.Header.Set(<span class="string">&quot;Expect&quot;</span>, <span class="string">&quot;100-continue&quot;</span>)</span><br><span class="line">        _, err = http.DefaultClient.Do(req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;do request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+]]></content>
+      <tags>
+        <tag>Golang</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>OCC 当前研究</title>
     <url>/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/</url>
     <content><![CDATA[<h3 id="内存数据库"><a href="#内存数据库" class="headerlink" title="内存数据库"></a>内存数据库</h3><ul>
 <li>随着硬件技术的发展，多核（几十、几百）、大内存（T级别）的单节点配置已在市场上出现，意味着大多数OLTP场景下的数据处理可以完全运行在内存中，SAP HANA、MemSQL、TimesTen、SolidDB、Hekaton等内存数据库也应运而生</li>
 <li>关注单机事务吞吐量</li>
 </ul>
-<span id="more"></span>
-
 <h3 id="分布式NewSQL数据库"><a href="#分布式NewSQL数据库" class="headerlink" title="分布式NewSQL数据库"></a>分布式NewSQL数据库</h3><ul>
 <li>NoSQL系统虽然实现了承诺的目标，但其不支持SQL语言、缺乏强一致性</li>
 <li>既具有NoSQL的所有优点并且还支持SQL语言及ACID事务，如F1、Spanner、CockroachDB、TiDB、OceanBase等</li>
@@ -230,6 +337,8 @@
 <li>性能优化目标可以统一描述为在硬件资源充足的情况下如何提高事务吞吐量。节约资源已不再是重点，减少系统同步，提高资源利用率才是核心问题</li>
 <li>在分布式计算环境下，网络交互的延迟或异常容易导致2PL协议可能长时间持有锁从而导致系统整体事务吞吐率降低或死锁。</li>
 </ul>
+<span id="more"></span>
+
 <h3 id="OCC"><a href="#OCC" class="headerlink" title="OCC"></a>OCC</h3><p>优点</p>
 <ul>
 <li>在高资源竞争、低数据竞争场景下，能够减少事务运行同步开销，避免死锁，支持更高的事务吞吐率</li>
@@ -384,116 +493,6 @@
 ]]></content>
       <tags>
         <tag>OCC</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>NewSQL 主流实现</title>
-    <url>/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/</url>
-    <content><![CDATA[<h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
-<h3 id="MVCC-OCC-x3D-SSI"><a href="#MVCC-OCC-x3D-SSI" class="headerlink" title="MVCC+OCC&#x3D;SSI"></a>MVCC+OCC&#x3D;SSI</h3><p>基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别</p>
-<span id="more"></span>
-
-<h3 id="NewSQL-主流系统"><a href="#NewSQL-主流系统" class="headerlink" title="NewSQL 主流系统"></a>NewSQL 主流系统</h3><p>原生实现</p>
-<ul>
-<li>CockroachDB</li>
-<li>YugaByteDB</li>
-</ul>
-<p>NoSQL+ACID+SQL</p>
-<ul>
-<li>TiDB</li>
-<li>Trafodion</li>
-</ul>
-<p>事务的并发控制是为了实现事务的调度，一个正确、高效的事务调度应满足如下属性：</p>
-<ul>
-<li>可串行化</li>
-</ul>
-<p>多个并发事务的调度S与一个串行化的调度产生相同的结果，则称这个调度S是可串行化的。在数据库实现中，一般使用冲突可串行化技术。</p>
-<ul>
-<li>可恢复性</li>
-</ul>
-<p>已经提交的事务没有读过被终止的事务写过的数据，防止脏读异常。</p>
-<ul>
-<li>避免级联终止</li>
-</ul>
-<p>避免由于事务T1的终止而导致事务T2的终止。</p>
-<ul>
-<li>严格性</li>
-</ul>
-<p>先发生写操作的事务的提交或终止应先于其它冲突事务的提交或终止。</p>
-<table>
-<thead>
-<tr>
-<th>生产级NewSQL数据库</th>
-<th>并发控制</th>
-<th>隔离级别</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Spanner</td>
-<td>MVCC+SS2PL</td>
-<td>Linearizability</td>
-</tr>
-<tr>
-<td>Oceanbase 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>RC</td>
-</tr>
-<tr>
-<td>CockroachDB 1.0</td>
-<td>MVCC+T&#x2F;O</td>
-<td>SSI</td>
-</tr>
-<tr>
-<td>TiDB 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>SI</td>
-</tr>
-<tr>
-<td>FoundationDB 5.1</td>
-<td>MVCC+OCC</td>
-<td>SSI</td>
-</tr>
-</tbody></table>
-<p>FoundationDB 的 OCC 实现也有一些限制，比如官方文档对 KV 和事务的大小及时长做出了如下限制：</p>
-<ul>
-<li>key不超过10K；value不超过100K；事务不超过10M（包括所有读、写涉及的KV）</li>
-<li>仅支持运行时间不超过5s的读写事务</li>
-</ul>
-]]></content>
-      <tags>
-        <tag>OCC</tag>
-        <tag>NewSQL</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Paper accepted by VLDB 2022</title>
-    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
-    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
-]]></content>
-      <tags>
-        <tag>Publication</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>TKDE Reviewer Invitation</title>
-    <url>/2022/05/10/TKDE-Reviewer-Invitation/</url>
-    <content><![CDATA[<p><strong>TKDE</strong>(IEEE Transactions on Knowledge and Data Engineering) Reviewer <a href="https://publons.com/researcher/5190849/zerui-ge/">https://publons.com/researcher/5190849/zerui-ge/</a></p>
-]]></content>
-      <tags>
-        <tag>Publication</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>bug of Golang httputil.ReverseProxy</title>
-    <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
-    <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
-<span id="more"></span>
-
-<p>I construct a broken server. The server will always send 100-continue and an incorrect header to proxy. In ReverseProxy，transport.RoundTrip(outreq) will receive an error and don’t keep the connection to client. After the connection is closed, (*conn).finalFlush will assign (*conn).bufw &#x3D; nil. At the same time, writeLoop probably doesn’t exit and may writeBody. The body here is an *expectContinueReader. When writeLoop first reads it, it writes 100-continue to client. But (*expectContinueReader).resp.conn.bufw &#x3D;&#x3D; nil, so it leads to panic. If writeBody happens before assign，it leads to data race.</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;io&quot;</span></span><br><span class="line">    <span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http/httputil&quot;</span></span><br><span class="line">    <span class="string">&quot;net/url&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> zeroReader <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(zeroReader)</span></span> Read(p []<span class="type">byte</span>) (<span class="type">int</span>, <span class="type">error</span>) &#123; <span class="keyword">return</span> <span class="built_in">len</span>(p), <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> infinite io.Reader = &amp;zeroReader&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">brokenBackend</span><span class="params">()</span></span> &#123;</span><br><span class="line">    http.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        conn, bfw, err := w.(http.Hijacker).Hijack()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;hijack failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// Tell client net/http.(*persistConn).writeLoop() to continue writeBody.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;HTTP/1.1 100 Continue\r\n\r\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Send client a wrong format header to make client net/http.(*persistConn).readLoop() readResponse failed.</span></span><br><span class="line">        <span class="comment">// Then client net/http.(*persistConn).roundTrip() will return an error and probably doesn&#x27;t wait</span></span><br><span class="line">        <span class="comment">// net/http.(*persistConn).writeLoop() to exit.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;BROKEN-HEADER\r\n\r\n&quot;</span>)</span><br><span class="line">        bfw.Flush()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Keep this connection for 1s so that the client doesn&#x27;t think the connection is down immediately.</span></span><br><span class="line">        &lt;-time.AfterFunc(time.Second, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; conn.Close() &#125;).C</span><br><span class="line">    &#125;)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8081&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Proxy just forwards requests to the broken backend.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">proxy</span><span class="params">()</span></span> &#123;</span><br><span class="line">    target, err := url.Parse(<span class="string">&quot;http://localhost:8081&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;parse target url failed: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">    p := httputil.NewSingleHostReverseProxy(target)</span><br><span class="line">    p.ErrorLog = log.New(ioutil.Discard, <span class="string">&quot;&quot;</span>, <span class="number">0</span>)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, p)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> brokenBackend()</span><br><span class="line">    <span class="keyword">go</span> proxy()</span><br><span class="line">    <span class="comment">// Wait backend and proxy server to start</span></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> <span class="keyword">range</span> time.Tick(time.Millisecond * <span class="number">100</span>) &#123;</span><br><span class="line">        req, err := http.NewRequest(<span class="string">&quot;PUT&quot;</span>, <span class="string">&quot;http://localhost:8080&quot;</span>, io.LimitReader(infinite, <span class="number">65536</span>))</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;create request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        req.Header.Set(<span class="string">&quot;Expect&quot;</span>, <span class="string">&quot;100-continue&quot;</span>)</span><br><span class="line">        _, err = http.DefaultClient.Do(req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;do request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-]]></content>
-      <tags>
-        <tag>Golang</tag>
       </tags>
   </entry>
   <entry>
