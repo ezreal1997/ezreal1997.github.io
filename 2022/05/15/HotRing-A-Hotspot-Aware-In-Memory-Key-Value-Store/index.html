@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.1.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":true},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="Tair(1) mdb是定位于cache缓存，类似于memcache的一个支持kv 内存缓存框架(2) rdb是 定位于cache缓存，采用了redis的内存存储结构的一个支持kv、list等复杂数据结构的缓存框架(3) ldb是一个定位于高性能存储，并可选择内嵌mdb cache加速，这种情况下cache与持久化存储的数据一致性由tair进行维护,支持kv及分级key存储，数据排序的缓存框架（l">
+<meta property="og:type" content="article">
+<meta property="og:title" content="HotRing: A Hotspot-Aware In-Memory Key-Value Store">
+<meta property="og:url" content="http://example.com/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/index.html">
+<meta property="og:site_name" content="ezreal&#39;s blog">
+<meta property="og:description" content="Tair(1) mdb是定位于cache缓存，类似于memcache的一个支持kv 内存缓存框架(2) rdb是 定位于cache缓存，采用了redis的内存存储结构的一个支持kv、list等复杂数据结构的缓存框架(3) ldb是一个定位于高性能存储，并可选择内嵌mdb cache加速，这种情况下cache与持久化存储的数据一致性由tair进行维护,支持kv及分级key存储，数据排序的缓存框架（l">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2022-05-15T13:04:27.000Z">
+<meta property="article:modified_time" content="2022-05-15T13:06:21.161Z">
+<meta property="article:author" content="ezreal">
+<meta property="article:tag" content="Paper">
+<meta property="article:tag" content="Cache">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="http://example.com/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>HotRing: A Hotspot-Aware In-Memory Key-Value Store | ezreal's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">ezreal's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="ezreal">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ezreal's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          HotRing: A Hotspot-Aware In-Memory Key-Value Store
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-05-15 21:04:27 / Modified: 21:06:21" itemprop="dateCreated datePublished" datetime="2022-05-15T21:04:27+08:00">2022-05-15</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>Tair<br>(1) mdb是定位于cache缓存，类似于memcache的一个支持kv 内存缓存框架<br>(2) rdb是 定位于cache缓存，采用了redis的内存存储结构的一个支持kv、list等复杂数据结构的缓存框架<br>(3) ldb是一个定位于高性能存储，并可选择内嵌mdb cache加速，这种情况下cache与持久化存储的数据一致性由tair进行维护,支持kv及分级key存储，数据排序的缓存框架（leveldb）</p>
+<span id="more"></span>
+
+<p>通常情况下，一个集群中包含2台configserver及多台dataServer。</p>
+<p>两台configserver互为主备并通过维护和dataserver之间的心跳获知集群中存活可用的dataserver，构建数据在集群中的分布信息（对照表）。</p>
+<p>dataserver负责数据的存储，并按照configserver的指示完成数据的复制和迁移工作。</p>
+<p>client在启动的时候，从configserver获取数据分布信息，根据数据分布信息和相应的dataserver交互完成用户的请求。</p>
+<p>invalidserver主要负责对等集群的删除和隐藏操作，保证对等集群的数据一致。</p>
+<h2 id="Chain-Base-Index"><a href="#Chain-Base-Index" class="headerlink" title="Chain Base Index"></a>Chain Base Index</h2><p>同时，随着链上 item 数量的不断增加，对 hot item 的内存访问次数可能会线性增长</p>
+<p>所以我们需要一个热点感知的hash index</p>
+<h2 id="Hotspot-Awareness-challenges"><a href="#Hotspot-Awareness-challenges" class="headerlink" title="Hotspot-Awareness challenges"></a>Hotspot-Awareness challenges</h2><p>用一个 head 指针来指向最热的位置，head 指针能动态指向任意一个 item</p>
+<p>为了保证所有 item 的可访问性不受 head 指针的影响，使用有序环结构替换之前的链式结构，这样的环＋head Pointer就可以避免 reorder</p>
+<h2 id="Ordered-ring-structure"><a href="#Ordered-ring-structure" class="headerlink" title="Ordered-ring structure"></a>Ordered-ring structure</h2><p>环装结构可能会导致一个问题：之前的链式结构下，如果next是nil那就可以停止查找，但现在是环装结构如果 target item not found，那么可能会无限移动。</p>
+<p>所以需要知道什么时候需要结束查找：mark 第一个 item 是不合理的，因为这个 item 可能被并发修改，比如被删除了就会有问题。</p>
+<p>可以通过排序，对key进行排序，如果当前移动到的 item 的key比要查找的 item key 大，那么就可以结束查找</p>
+<p>为了防止 key 过长导致两个key的比较时间较长，使用了 tag字段。Item 的rank由tag和key共同决定。</p>
+<p>Tag 是 hash value 的后 n-k 个bit，前k个bit作为 hashtable part</p>
+<h2 id="Identify-hotspots-and-adjust-head-pointer"><a href="#Identify-hotspots-and-adjust-head-pointer" class="headerlink" title="Identify hotspots and adjust head pointer"></a>Identify hotspots and adjust head pointer</h2><p>R的设定影响着响应延迟和热点感知的准确性，R越小，对于热点的感知就会越好，但是这也可能会导致频繁且无效的 head pointer 移动。</p>
+<p>但在当前的热点场景下，数据访问呈现非常极端的表现，所以head pointer并不会频繁移动。根据他们的实验 R 为 5 的时候表现最好。</p>
+<h2 id="Statistical-Sampling-Strategy"><a href="#Statistical-Sampling-Strategy" class="headerlink" title="Statistical Sampling Strategy"></a>Statistical Sampling Strategy</h2><p>当前 x86-64 的机器下，物理地址只有48位，但是可以通过一个 64 位的 CAS 操作进行更新，那么剩下的 16 位可以用作记录元信息。</p>
+<h3 id="Header："><a href="#Header：" class="headerlink" title="Header："></a>Header：</h3><p>active 用来控制热点标识的抽样统计的一个 flag，当 active被set之后，对ring的访问才会被记录在 total counter和相应 item 的counter中。</p>
+<h3 id="Item："><a href="#Item：" class="headerlink" title="Item："></a>Item：</h3><p>rehash 用来控制 rehash，这个后面rehash部分会讲到。</p>
+<p>occupied 是用来确保并发的正确性的，后面并发操作部分会讲到</p>
+<p>每一个线程都有一个 thread-local 变量记录他已经处理的请求数。</p>
+<p>如果第 R 个请求是一个 hot access （head pointer指向的是hot item，其他的是 cold item。对hot item的访问就是 hot access），那么不需要进行改变</p>
+<p>如果是 cold access，set active，开始计数，因为更新计数需要额外的 CAS 操作，所以我们抽样的数量和环上 item的数量保持一致。</p>
+<p>Sampling结束之后一个thread开始计算以第t个item作为head时环的平均内存访问次数Wt，最后选择一个最小Wt的item作为head。（之所以计算环的平均访问次数，是为了适应多热点）</p>
+<p>每次更新完head之后重置counter</p>
+<h2 id="Concurrent-Operations"><a href="#Concurrent-Operations" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>一方面，头部指针的移动可能与其他线程并发。因此，我们需要考虑头部指针移动和其他修改操作的并发性，以防止指针指向无效项。另一方面，当我们删除或更新项目时，我们需要检查头部指针是否指向该项目。如果是这样，我们需要正确而高效地移动头部指针</p>
+<h3 id="RCU（Read-Copy-Update）"><a href="#RCU（Read-Copy-Update）" class="headerlink" title="RCU（Read Copy Update）"></a>RCU（Read Copy Update）</h3><p>适合类似链表的数据结构</p>
+<p>读和写不需要额外的同步机制</p>
+<p>宽限期 grace period</p>
+<p>读多写少</p>
+<p>多个写者需要额外的同步策略</p>
+<h2 id="Concurrent-Operations-1"><a href="#Concurrent-Operations-1" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>read不牵扯任何并发的问题，按照之前流程读就可以</p>
+<p>insert只需要用CAS修改next address就可以</p>
+<p>Update时有个问题就是同时有两个 thread，一个在B的后面insert C，一个修改了B。如图a，B的修改使用RCU，C的插入使用CAS，这样可能导致C的失效。</p>
+<p>所以我们使用之前说过的一个 occupied bit，当对B进行 Update 之后，B的Occupied就会被set，等到A的nextaddress被更新了之后，对C的insert才会成功因为此时的B’的occupied没有被set</p>
+<p>热点转移策略修改的head Pointer，我们会set Occupied，使得在move head 时候不会被Update或修改</p>
+<p>如果是 head item发生了update，那么会先 set new item的Occupied，之后move</p>
+<p>如果head item 被删除，head item 和 next都被 Occupied</p>
+<h2 id="Lock-free-rehash"><a href="#Lock-free-rehash" class="headerlink" title="Lock-free rehash"></a>Lock-free rehash</h2><p>随着不断的 insert，chain的量也越来越大，我们需要根据 data 容量进行 rehash</p>
+<p>常见的Rehash的策略是根据 hash table 的链的平均长度触发 rehash，但这没有考虑到热点的影响</p>
+<p>新建的hash table是原来的两倍大，新建两个 rehashitem，用 rehash bit 来标记 rehash item</p>
+<p>rehash过程分为3步进行，结合上面4图进行说明，图一为哈希表，哈希值在rehash前后的变化。剩余三图为rehash三个过程。</p>
+<p>初始化(Initialization)：首先，HotRing创建一个后台rehash线程。该线程创建2倍空间的新哈希表，通过复用tag的最高一位来进行索引。因此，新表中将会有两个头指针与旧表中的一个头指针对应。HotRing根据tag范围对数据进行划分。假设tag最大值为T，tag范围为[0,T)，则两个新的头指针对应tag范围为[0,T&#x2F;2)和[T&#x2F;2,T)。同时，rahash线程创建一个rehash节点(包含两个空数据的子item节点)，子item节点分别对应两个新头指针。HotRing利用item中的Rehash标志位识别rehash节点的子item节点。</p>
+<p>分裂(Split)：在分裂阶段，rehash线程通过将rehash节点的两个子item节点插入环中完成环的分裂。如图(Split)所示，因为itemB和E是tag的范围边界，所以子item节点分别插入到itemB和E之前。完成两个插入操作后，新哈希表将激活，所有的访问都将通过新哈希表进行访问。到目前为止，已经在逻辑上将冲突环一分为二。当我们查找数据时，最多只需要扫描一半的item。</p>
+<p>删除(Deletion)：删除阶段需要做一些首尾工作，包括旧哈希表的回收。以及rehash节点的删除回收。这里需要强调，分裂阶段和删除阶段间，必须有一个RCU静默期(transition period)。该静默期保证所有从旧哈希表进入的访问均已经返回。否则，直接回收旧哈希表可能导致并发错误。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Paper/" rel="tag"># Paper</a>
+              <a href="/tags/Cache/" rel="tag"># Cache</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2022/05/15/Raft-Quiz/" rel="prev" title="Raft Quiz">
+      <i class="fa fa-chevron-left"></i> Raft Quiz
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Chain-Base-Index"><span class="nav-number">1.</span> <span class="nav-text">Chain Base Index</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Hotspot-Awareness-challenges"><span class="nav-number">2.</span> <span class="nav-text">Hotspot-Awareness challenges</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Ordered-ring-structure"><span class="nav-number">3.</span> <span class="nav-text">Ordered-ring structure</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Identify-hotspots-and-adjust-head-pointer"><span class="nav-number">4.</span> <span class="nav-text">Identify hotspots and adjust head pointer</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Statistical-Sampling-Strategy"><span class="nav-number">5.</span> <span class="nav-text">Statistical Sampling Strategy</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Header%EF%BC%9A"><span class="nav-number">5.1.</span> <span class="nav-text">Header：</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Item%EF%BC%9A"><span class="nav-number">5.2.</span> <span class="nav-text">Item：</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Concurrent-Operations"><span class="nav-number">6.</span> <span class="nav-text">Concurrent Operations</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#RCU%EF%BC%88Read-Copy-Update%EF%BC%89"><span class="nav-number">6.1.</span> <span class="nav-text">RCU（Read Copy Update）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Concurrent-Operations-1"><span class="nav-number">7.</span> <span class="nav-text">Concurrent Operations</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Lock-free-rehash"><span class="nav-number">8.</span> <span class="nav-text">Lock-free rehash</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">ezreal</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">16</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">10</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">ezreal</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

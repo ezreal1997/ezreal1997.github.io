@@ -137,6 +137,63 @@
       </tags>
   </entry>
   <entry>
+    <title>HotRing: A Hotspot-Aware In-Memory Key-Value Store</title>
+    <url>/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/</url>
+    <content><![CDATA[<p>Tair<br>(1) mdb是定位于cache缓存，类似于memcache的一个支持kv 内存缓存框架<br>(2) rdb是 定位于cache缓存，采用了redis的内存存储结构的一个支持kv、list等复杂数据结构的缓存框架<br>(3) ldb是一个定位于高性能存储，并可选择内嵌mdb cache加速，这种情况下cache与持久化存储的数据一致性由tair进行维护,支持kv及分级key存储，数据排序的缓存框架（leveldb）</p>
+<span id="more"></span>
+
+<p>通常情况下，一个集群中包含2台configserver及多台dataServer。</p>
+<p>两台configserver互为主备并通过维护和dataserver之间的心跳获知集群中存活可用的dataserver，构建数据在集群中的分布信息（对照表）。</p>
+<p>dataserver负责数据的存储，并按照configserver的指示完成数据的复制和迁移工作。</p>
+<p>client在启动的时候，从configserver获取数据分布信息，根据数据分布信息和相应的dataserver交互完成用户的请求。</p>
+<p>invalidserver主要负责对等集群的删除和隐藏操作，保证对等集群的数据一致。</p>
+<h2 id="Chain-Base-Index"><a href="#Chain-Base-Index" class="headerlink" title="Chain Base Index"></a>Chain Base Index</h2><p>同时，随着链上 item 数量的不断增加，对 hot item 的内存访问次数可能会线性增长</p>
+<p>所以我们需要一个热点感知的hash index</p>
+<h2 id="Hotspot-Awareness-challenges"><a href="#Hotspot-Awareness-challenges" class="headerlink" title="Hotspot-Awareness challenges"></a>Hotspot-Awareness challenges</h2><p>用一个 head 指针来指向最热的位置，head 指针能动态指向任意一个 item</p>
+<p>为了保证所有 item 的可访问性不受 head 指针的影响，使用有序环结构替换之前的链式结构，这样的环＋head Pointer就可以避免 reorder</p>
+<h2 id="Ordered-ring-structure"><a href="#Ordered-ring-structure" class="headerlink" title="Ordered-ring structure"></a>Ordered-ring structure</h2><p>环装结构可能会导致一个问题：之前的链式结构下，如果next是nil那就可以停止查找，但现在是环装结构如果 target item not found，那么可能会无限移动。</p>
+<p>所以需要知道什么时候需要结束查找：mark 第一个 item 是不合理的，因为这个 item 可能被并发修改，比如被删除了就会有问题。</p>
+<p>可以通过排序，对key进行排序，如果当前移动到的 item 的key比要查找的 item key 大，那么就可以结束查找</p>
+<p>为了防止 key 过长导致两个key的比较时间较长，使用了 tag字段。Item 的rank由tag和key共同决定。</p>
+<p>Tag 是 hash value 的后 n-k 个bit，前k个bit作为 hashtable part</p>
+<h2 id="Identify-hotspots-and-adjust-head-pointer"><a href="#Identify-hotspots-and-adjust-head-pointer" class="headerlink" title="Identify hotspots and adjust head pointer"></a>Identify hotspots and adjust head pointer</h2><p>R的设定影响着响应延迟和热点感知的准确性，R越小，对于热点的感知就会越好，但是这也可能会导致频繁且无效的 head pointer 移动。</p>
+<p>但在当前的热点场景下，数据访问呈现非常极端的表现，所以head pointer并不会频繁移动。根据他们的实验 R 为 5 的时候表现最好。</p>
+<h2 id="Statistical-Sampling-Strategy"><a href="#Statistical-Sampling-Strategy" class="headerlink" title="Statistical Sampling Strategy"></a>Statistical Sampling Strategy</h2><p>当前 x86-64 的机器下，物理地址只有48位，但是可以通过一个 64 位的 CAS 操作进行更新，那么剩下的 16 位可以用作记录元信息。</p>
+<h3 id="Header："><a href="#Header：" class="headerlink" title="Header："></a>Header：</h3><p>active 用来控制热点标识的抽样统计的一个 flag，当 active被set之后，对ring的访问才会被记录在 total counter和相应 item 的counter中。</p>
+<h3 id="Item："><a href="#Item：" class="headerlink" title="Item："></a>Item：</h3><p>rehash 用来控制 rehash，这个后面rehash部分会讲到。</p>
+<p>occupied 是用来确保并发的正确性的，后面并发操作部分会讲到</p>
+<p>每一个线程都有一个 thread-local 变量记录他已经处理的请求数。</p>
+<p>如果第 R 个请求是一个 hot access （head pointer指向的是hot item，其他的是 cold item。对hot item的访问就是 hot access），那么不需要进行改变</p>
+<p>如果是 cold access，set active，开始计数，因为更新计数需要额外的 CAS 操作，所以我们抽样的数量和环上 item的数量保持一致。</p>
+<p>Sampling结束之后一个thread开始计算以第t个item作为head时环的平均内存访问次数Wt，最后选择一个最小Wt的item作为head。（之所以计算环的平均访问次数，是为了适应多热点）</p>
+<p>每次更新完head之后重置counter</p>
+<h2 id="Concurrent-Operations"><a href="#Concurrent-Operations" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>一方面，头部指针的移动可能与其他线程并发。因此，我们需要考虑头部指针移动和其他修改操作的并发性，以防止指针指向无效项。另一方面，当我们删除或更新项目时，我们需要检查头部指针是否指向该项目。如果是这样，我们需要正确而高效地移动头部指针</p>
+<h3 id="RCU（Read-Copy-Update）"><a href="#RCU（Read-Copy-Update）" class="headerlink" title="RCU（Read Copy Update）"></a>RCU（Read Copy Update）</h3><p>适合类似链表的数据结构</p>
+<p>读和写不需要额外的同步机制</p>
+<p>宽限期 grace period</p>
+<p>读多写少</p>
+<p>多个写者需要额外的同步策略</p>
+<h2 id="Concurrent-Operations-1"><a href="#Concurrent-Operations-1" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>read不牵扯任何并发的问题，按照之前流程读就可以</p>
+<p>insert只需要用CAS修改next address就可以</p>
+<p>Update时有个问题就是同时有两个 thread，一个在B的后面insert C，一个修改了B。如图a，B的修改使用RCU，C的插入使用CAS，这样可能导致C的失效。</p>
+<p>所以我们使用之前说过的一个 occupied bit，当对B进行 Update 之后，B的Occupied就会被set，等到A的nextaddress被更新了之后，对C的insert才会成功因为此时的B’的occupied没有被set</p>
+<p>热点转移策略修改的head Pointer，我们会set Occupied，使得在move head 时候不会被Update或修改</p>
+<p>如果是 head item发生了update，那么会先 set new item的Occupied，之后move</p>
+<p>如果head item 被删除，head item 和 next都被 Occupied</p>
+<h2 id="Lock-free-rehash"><a href="#Lock-free-rehash" class="headerlink" title="Lock-free rehash"></a>Lock-free rehash</h2><p>随着不断的 insert，chain的量也越来越大，我们需要根据 data 容量进行 rehash</p>
+<p>常见的Rehash的策略是根据 hash table 的链的平均长度触发 rehash，但这没有考虑到热点的影响</p>
+<p>新建的hash table是原来的两倍大，新建两个 rehashitem，用 rehash bit 来标记 rehash item</p>
+<p>rehash过程分为3步进行，结合上面4图进行说明，图一为哈希表，哈希值在rehash前后的变化。剩余三图为rehash三个过程。</p>
+<p>初始化(Initialization)：首先，HotRing创建一个后台rehash线程。该线程创建2倍空间的新哈希表，通过复用tag的最高一位来进行索引。因此，新表中将会有两个头指针与旧表中的一个头指针对应。HotRing根据tag范围对数据进行划分。假设tag最大值为T，tag范围为[0,T)，则两个新的头指针对应tag范围为[0,T&#x2F;2)和[T&#x2F;2,T)。同时，rahash线程创建一个rehash节点(包含两个空数据的子item节点)，子item节点分别对应两个新头指针。HotRing利用item中的Rehash标志位识别rehash节点的子item节点。</p>
+<p>分裂(Split)：在分裂阶段，rehash线程通过将rehash节点的两个子item节点插入环中完成环的分裂。如图(Split)所示，因为itemB和E是tag的范围边界，所以子item节点分别插入到itemB和E之前。完成两个插入操作后，新哈希表将激活，所有的访问都将通过新哈希表进行访问。到目前为止，已经在逻辑上将冲突环一分为二。当我们查找数据时，最多只需要扫描一半的item。</p>
+<p>删除(Deletion)：删除阶段需要做一些首尾工作，包括旧哈希表的回收。以及rehash节点的删除回收。这里需要强调，分裂阶段和删除阶段间，必须有一个RCU静默期(transition period)。该静默期保证所有从旧哈希表进入的访问均已经返回。否则，直接回收旧哈希表可能导致并发错误。</p>
+]]></content>
+      <tags>
+        <tag>Paper</tag>
+        <tag>Cache</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>In Search of an Understandable Consensus Algorithm (Extended Version)</title>
     <url>/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/</url>
     <content><![CDATA[<h3 id="Raft特性"><a href="#Raft特性" class="headerlink" title="Raft特性"></a>Raft特性</h3><ul>
@@ -623,7 +680,7 @@
     <title>Raft Quiz</title>
     <url>/2022/05/15/Raft-Quiz/</url>
     <content><![CDATA[<h3 id="1"><a href="#1" class="headerlink" title="1"></a>1</h3><h4 id="Question"><a href="#Question" class="headerlink" title="Question"></a>Question</h4><p>下面的每张图都显示了一台 Raft 服务器上可能存储的日志（日志内容未显示，只显示日志的 index 和任期号）。考虑每份日志都是独立的，下面的日志可能发生在 Raft 中吗？如果不能，请解释原因。</p>
-<p><img src="/raft_q1.png"></p>
+<p><img src="/2022/05/15/Raft-Quiz/raft_q1.png"></p>
 <span id="more"></span>
 
 <h4 id="Answer"><a href="#Answer" class="headerlink" title="Answer"></a>Answer</h4><p>a. 不能：任期在日志里必须单调递增。</p>
@@ -632,7 +689,7 @@
 <p>c. 可以</p>
 <p>d. 不能：日志不允许空洞。 具体来说，Leader 只能追加日志，<code>AppendEntries</code> 中的一致性检查永远不会允许空洞。</p>
 <h3 id="2"><a href="#2" class="headerlink" title="2"></a>2</h3><h4 id="Question-1"><a href="#Question-1" class="headerlink" title="Question"></a>Question</h4><p>下图显示了一个 5 台服务器集群中的日志（日志内容未显示）。哪些日志记录可以安全地应用到状态机？请解释你的答案。</p>
-<p><img src="/raft_q2.png"></p>
+<p><img src="/2022/05/15/Raft-Quiz/raft_q2.png"></p>
 <h4 id="Answer-1"><a href="#Answer-1" class="headerlink" title="Answer"></a>Answer</h4><p>日志记录 &lt;1,1&gt; 和 &lt;2,1&gt; 可以安全应用（到状态机）：</p>
 <p>如果一条日志记录没有存储在多数派上，它就不能被安全地应用。这是因为少数服务器可能故障，并且其它服务器（构成多数派）可以在不知道该日志记录的情况下继续运行。</p>
 <p>因此，我们只需要考虑记录 &lt;1,1&gt;, &lt;2,1&gt;, &lt;3,2&gt;, &lt;4,2&gt;, &lt;5,2&gt;。</p>
@@ -642,7 +699,7 @@
 <p>S3 和 S4 不能被选为 Leader，因为它们的日志不够完整。S5 能被选举为 LEader，但是它包含了 &lt;1,1&gt; 和 &lt;2,1&gt; 。</p>
 <p>因此，只有记录 &lt;1,1&gt; 和 &lt;2,1&gt; 可以被安全地应用（到状态机）</p>
 <h3 id="3"><a href="#3" class="headerlink" title="3"></a>3</h3><h4 id="Question-2"><a href="#Question-2" class="headerlink" title="Question"></a>Question</h4><p>考虑下图，它显示了一个 6 台服务器集群中的日志，此时刚刚选出任期 7 的新 Leader（日志内容未显示，只显示日志的 index 和任期号）。对于图中每一个 Follower，给定的日志是否可能在一个正常运行的 Raft 系统中存在？如果是，请描述该情况如何发生的；如果不是，解释为什么。</p>
-<p><img src="/raft_q3.png"></p>
+<p><img src="/2022/05/15/Raft-Quiz/raft_q3.png"></p>
 <h4 id="Answer-2"><a href="#Answer-2" class="headerlink" title="Answer"></a>Answer</h4><p>(a) 不能。<strong>如果在不同的日志中的两条记录拥有相同的索引和任期号，那么他们之前的所有日志条目也全部相同。</strong> &lt;5, 3&gt; 在 Leader 和 a 中都存在，但是前面的日志却不相同。</p>
 <p>(b) 不能。同上，&lt;6, 5&gt; 在 Leader 和 b 中都存在，但是前面的日志却不相同。</p>
 <p>(c) 可能。c 可能是第 6 任期的 Leader，其起始日志为 &lt;1,1&gt;, &lt;2,1&gt; 并且可能在其日志中写了一堆记录，而没有与我们第 7 任期的当前 Leader 进行通信。这也假设当前 Leader 的 &lt;3,3&gt;、&lt;4,3&gt;、&lt;5,3&gt;、&lt;6,5&gt; 这几个日志记录在第 5 任期没有被写入，这是可能的。</p>
@@ -780,25 +837,6 @@
       </tags>
   </entry>
   <entry>
-    <title>bug of Golang httputil.ReverseProxy</title>
-    <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
-    <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
-<span id="more"></span>
-
-<p>I construct a broken server. The server will always send 100-continue and an incorrect header to proxy. In ReverseProxy，transport.RoundTrip(outreq) will receive an error and don’t keep the connection to client. After the connection is closed, (*conn).finalFlush will assign (*conn).bufw &#x3D; nil. At the same time, writeLoop probably doesn’t exit and may writeBody. The body here is an *expectContinueReader. When writeLoop first reads it, it writes 100-continue to client. But (*expectContinueReader).resp.conn.bufw &#x3D;&#x3D; nil, so it leads to panic. If writeBody happens before assign，it leads to data race.</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;io&quot;</span></span><br><span class="line">    <span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http/httputil&quot;</span></span><br><span class="line">    <span class="string">&quot;net/url&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> zeroReader <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(zeroReader)</span></span> Read(p []<span class="type">byte</span>) (<span class="type">int</span>, <span class="type">error</span>) &#123; <span class="keyword">return</span> <span class="built_in">len</span>(p), <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> infinite io.Reader = &amp;zeroReader&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">brokenBackend</span><span class="params">()</span></span> &#123;</span><br><span class="line">    http.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        conn, bfw, err := w.(http.Hijacker).Hijack()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;hijack failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// Tell client net/http.(*persistConn).writeLoop() to continue writeBody.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;HTTP/1.1 100 Continue\r\n\r\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Send client a wrong format header to make client net/http.(*persistConn).readLoop() readResponse failed.</span></span><br><span class="line">        <span class="comment">// Then client net/http.(*persistConn).roundTrip() will return an error and probably doesn&#x27;t wait</span></span><br><span class="line">        <span class="comment">// net/http.(*persistConn).writeLoop() to exit.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;BROKEN-HEADER\r\n\r\n&quot;</span>)</span><br><span class="line">        bfw.Flush()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Keep this connection for 1s so that the client doesn&#x27;t think the connection is down immediately.</span></span><br><span class="line">        &lt;-time.AfterFunc(time.Second, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; conn.Close() &#125;).C</span><br><span class="line">    &#125;)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8081&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Proxy just forwards requests to the broken backend.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">proxy</span><span class="params">()</span></span> &#123;</span><br><span class="line">    target, err := url.Parse(<span class="string">&quot;http://localhost:8081&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;parse target url failed: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">    p := httputil.NewSingleHostReverseProxy(target)</span><br><span class="line">    p.ErrorLog = log.New(ioutil.Discard, <span class="string">&quot;&quot;</span>, <span class="number">0</span>)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, p)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> brokenBackend()</span><br><span class="line">    <span class="keyword">go</span> proxy()</span><br><span class="line">    <span class="comment">// Wait backend and proxy server to start</span></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> <span class="keyword">range</span> time.Tick(time.Millisecond * <span class="number">100</span>) &#123;</span><br><span class="line">        req, err := http.NewRequest(<span class="string">&quot;PUT&quot;</span>, <span class="string">&quot;http://localhost:8080&quot;</span>, io.LimitReader(infinite, <span class="number">65536</span>))</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;create request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        req.Header.Set(<span class="string">&quot;Expect&quot;</span>, <span class="string">&quot;100-continue&quot;</span>)</span><br><span class="line">        _, err = http.DefaultClient.Do(req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;do request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-]]></content>
-      <tags>
-        <tag>Golang</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Hello World</title>
-    <url>/2022/04/10/hello-world/</url>
-    <content><![CDATA[<p>Hello World!</p>
-]]></content>
-  </entry>
-  <entry>
     <title>WiscKey: Separating Keys from Values in SSD-conscious Storage</title>
     <url>/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/</url>
     <content><![CDATA[<h3 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h3><p>这篇 Paper 将的都是如何解决 LSM-Tree 的写放大的问题。Wisckey的基本思路其实很简单，使用的方法就是将Key和Value分开保存的方式，对于读取Value时造成的随机读写问题，Wisckey则认为这个在SSD上的问题能得到缓解，也使用了预取，并行读等的一些优化方式。在SOSP‘17上面的 PebblesDB 则对 LSM-Tree 的结构进行了比较好的改进，个人认为这个是一种更加好的方式。WiscKey的设计目标是为随机性能比较好的SSD优化的，因为它的设计会导致比较多的随机读，它在测试数据中实现了,</p>
@@ -835,5 +873,24 @@
         <tag>Paper</tag>
         <tag>LSM</tag>
       </tags>
+  </entry>
+  <entry>
+    <title>bug of Golang httputil.ReverseProxy</title>
+    <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
+    <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
+<span id="more"></span>
+
+<p>I construct a broken server. The server will always send 100-continue and an incorrect header to proxy. In ReverseProxy，transport.RoundTrip(outreq) will receive an error and don’t keep the connection to client. After the connection is closed, (*conn).finalFlush will assign (*conn).bufw &#x3D; nil. At the same time, writeLoop probably doesn’t exit and may writeBody. The body here is an *expectContinueReader. When writeLoop first reads it, it writes 100-continue to client. But (*expectContinueReader).resp.conn.bufw &#x3D;&#x3D; nil, so it leads to panic. If writeBody happens before assign，it leads to data race.</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;io&quot;</span></span><br><span class="line">    <span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http/httputil&quot;</span></span><br><span class="line">    <span class="string">&quot;net/url&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> zeroReader <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(zeroReader)</span></span> Read(p []<span class="type">byte</span>) (<span class="type">int</span>, <span class="type">error</span>) &#123; <span class="keyword">return</span> <span class="built_in">len</span>(p), <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> infinite io.Reader = &amp;zeroReader&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">brokenBackend</span><span class="params">()</span></span> &#123;</span><br><span class="line">    http.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        conn, bfw, err := w.(http.Hijacker).Hijack()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;hijack failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// Tell client net/http.(*persistConn).writeLoop() to continue writeBody.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;HTTP/1.1 100 Continue\r\n\r\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Send client a wrong format header to make client net/http.(*persistConn).readLoop() readResponse failed.</span></span><br><span class="line">        <span class="comment">// Then client net/http.(*persistConn).roundTrip() will return an error and probably doesn&#x27;t wait</span></span><br><span class="line">        <span class="comment">// net/http.(*persistConn).writeLoop() to exit.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;BROKEN-HEADER\r\n\r\n&quot;</span>)</span><br><span class="line">        bfw.Flush()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Keep this connection for 1s so that the client doesn&#x27;t think the connection is down immediately.</span></span><br><span class="line">        &lt;-time.AfterFunc(time.Second, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; conn.Close() &#125;).C</span><br><span class="line">    &#125;)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8081&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Proxy just forwards requests to the broken backend.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">proxy</span><span class="params">()</span></span> &#123;</span><br><span class="line">    target, err := url.Parse(<span class="string">&quot;http://localhost:8081&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;parse target url failed: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">    p := httputil.NewSingleHostReverseProxy(target)</span><br><span class="line">    p.ErrorLog = log.New(ioutil.Discard, <span class="string">&quot;&quot;</span>, <span class="number">0</span>)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, p)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> brokenBackend()</span><br><span class="line">    <span class="keyword">go</span> proxy()</span><br><span class="line">    <span class="comment">// Wait backend and proxy server to start</span></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> <span class="keyword">range</span> time.Tick(time.Millisecond * <span class="number">100</span>) &#123;</span><br><span class="line">        req, err := http.NewRequest(<span class="string">&quot;PUT&quot;</span>, <span class="string">&quot;http://localhost:8080&quot;</span>, io.LimitReader(infinite, <span class="number">65536</span>))</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;create request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        req.Header.Set(<span class="string">&quot;Expect&quot;</span>, <span class="string">&quot;100-continue&quot;</span>)</span><br><span class="line">        _, err = http.DefaultClient.Do(req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;do request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+]]></content>
+      <tags>
+        <tag>Golang</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Hello World</title>
+    <url>/2022/04/10/hello-world/</url>
+    <content><![CDATA[<p>Hello World!</p>
+]]></content>
   </entry>
 </search>
