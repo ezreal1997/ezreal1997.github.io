@@ -1,6 +1,78 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>Centiman: Elastic, High Performance Optimistic Concurrency Control by Watermarking</title>
+    <url>/2022/05/15/Centiman-Elastic-High-Performance-Optimistic-Concurrency-Control-by-Watermarking/</url>
+    <content><![CDATA[<p>ACID over KVS</p>
+<p>OCC</p>
+<p>Validation is sharded and proceeds in parallel</p>
+<p><img src="/2022/05/15/Centiman-Elastic-High-Performance-Optimistic-Concurrency-Control-by-Watermarking/centiman.png" alt="Architecture"></p>
+<span id="more"></span>
+
+<p>Put(key, value, timestamp)</p>
+<ul>
+<li>Ignored when timestamp is smaller than current</li>
+</ul>
+<p>Get(key) -&gt; (value, version)</p>
+<p>Read -&gt; Validation -&gt; Write</p>
+<ul>
+<li>Validation for each transaction happens at one or more validators and is carried out in timestamp order.</li>
+<li>Buffer previous WriteSets, used for later ReadSet check.</li>
+<li>The storage rejects all writes to a record r by transaction i if a version j &gt; i is already installed for r.</li>
+</ul>
+<p>Spurious aborts</p>
+<ul>
+<li>Txn make validations on A and B. A commit while B abort, it will pollute A’s WriteSet and cause spurious aborts.</li>
+</ul>
+<p>Validation with watermarks</p>
+<ul>
+<li>Watermarks are metadata that propagate through the system information about the timestamp of the latest completed transaction.</li>
+<li>If record r has watermark w at time t, then at time t all transactions with timestamp i ≤ w have either already installed their writes on r or will never make any writes to r.</li>
+</ul>
+<p>Validation for Read-Only transactions</p>
+<ul>
+<li>For a timestamp i, we say that a datastore is at snapshot i if no version of any record with a timestamp j ≤ i will ever be installed in the future, and no version of any record with a timestamp k &gt; i exists in the datastore.</li>
+<li>We say that a transaction reads at snapshot i if all the reads that it performs see the same values and versions as they would in a datastore at snapshot i.</li>
+</ul>
+<p><img src="/2022/05/15/Centiman-Elastic-High-Performance-Optimistic-Concurrency-Control-by-Watermarking/centiman_proc.png" alt="Algorithm"></p>
+<p>Validator scaling</p>
+<ul>
+<li>Global Master informs all processors to send validation requests based both on the old and the new partitioning.</li>
+<li>At a suitable point, the global master decides to switch to the new partitioning synchronically.</li>
+</ul>
+<p>Implementation</p>
+<ul>
+<li>Slide time window, validation before the current window will abort.</li>
+<li>Gossip protocol.</li>
+<li>To compute a watermark for a read, each processor uses the minimum of its own local watermark and the cached watermarks of other processors</li>
+<li>Each processor node maintains a write-ahead log to enable a redo of writes to the datastore.</li>
+</ul>
+<h3 id="一个事务的完整生命周期"><a href="#一个事务的完整生命周期" class="headerlink" title="一个事务的完整生命周期"></a>一个事务的完整生命周期</h3><p>读取阶段</p>
+<ul>
+<li>处理结点维护一个本地的已应用事务提交时间戳（watermark，此时间戳之前的数据更新已写入kv存储）及其它节点已应用事务提交时间戳的缓存（缓存定期异步更新）</li>
+<li>每次读操作读取最新版本的kv，处理结点会计算最新的watermark时间（取全局最小），将key、version、watermark记入读集；写入操作需将kv缓存到处理结点的事务私有内存空间并将key记入写集</li>
+</ul>
+<p>验证阶段</p>
+<ul>
+<li>只读和读写事务都需要走验证流程（优化：处理结点若发现待验证事务的所有读时间戳都小于事务第一次读时的watermark，则直接向客户端返回提交）</li>
+<li>处理结点给待验证事务赋值一个全局单调递增的提交时间戳</li>
+<li>将执行阶段记录的读集、写集按照key的某种分片规则分别发送到对应的验证结点，同时将事务私有内存中的数据异步写日志</li>
+<li>每个验证节点维护一个滑动时间窗口，小于滑动时间窗口到来的验证请求则直接返回验证失败；落在滑动窗口内的验证请求按照事务提交时间戳顺序进行处理并持续推进滑动窗口</li>
+<li>采用BOCC算法进行验证，对于事务在某个分片验证节点读集中的每个key，在验证结点缓存的事务写集中查找所有在读key时间戳和待验证事务提交时间戳之间提交的事务并验证读key是否与已提交事务的写集冲突 （优化：如果读key时间戳小于记录的watermark时间戳，则冲突检查区间可以缩小为在watermark时间戳和待验证事务提交时间戳之间）</li>
+<li>若冲突，则中止事务；否则，将待提交事务的写集缓存在验证节点用于后续新事务的验证并提交事务</li>
+<li>如果所有相关验证结点都同意提交事务，则发起验证的处理结点写提交日志并通知客户端，转入写入阶段；否则直接通知客户端事务已中止（可能存在有些验证结点认为应该提交，有些验证结点认为应该终止的状态，虽然事务整体是终止状态，但部分验证结点会存在冲突误判，论文中也是依赖watermark机制尽量减少误判）</li>
+</ul>
+<p>写入阶段</p>
+<ul>
+<li>处理结点将事务本地内存中的更新内容写入kv存储（写入过程不要求保证原子性，允许其它事务读到部分写入的新值；通过kv存储的MVCC机制保证提交时间戳靠后的事务写入的数据不会被提交时间戳靠前的事务写入的数据覆盖）</li>
+<li>待全部写入成功后，更新本地watermark并异步记录事务已完成日志</li>
+</ul>
+]]></content>
+      <tags>
+        <tag>OCC</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Interesting Golang</title>
     <url>/2022/05/12/Interesting-Golang/</url>
     <content><![CDATA[<p>Golang interesting design</p>
@@ -74,6 +146,85 @@
 ]]></content>
       <tags>
         <tag>Golang</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>NewSQL 主流实现</title>
+    <url>/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/</url>
+    <content><![CDATA[<h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
+<h3 id="MVCC-OCC-x3D-SSI"><a href="#MVCC-OCC-x3D-SSI" class="headerlink" title="MVCC+OCC&#x3D;SSI"></a>MVCC+OCC&#x3D;SSI</h3><p>基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别</p>
+<h3 id="NewSQL-主流系统"><a href="#NewSQL-主流系统" class="headerlink" title="NewSQL 主流系统"></a>NewSQL 主流系统</h3><p>原生实现</p>
+<ul>
+<li>CockroachDB</li>
+<li>YugaByteDB</li>
+</ul>
+<p>NoSQL+ACID+SQL</p>
+<ul>
+<li>TiDB</li>
+<li>Trafodion</li>
+</ul>
+<span id="more"></span>
+
+<p>事务的并发控制是为了实现事务的调度，一个正确、高效的事务调度应满足如下属性：</p>
+<ul>
+<li>可串行化</li>
+</ul>
+<p>多个并发事务的调度S与一个串行化的调度产生相同的结果，则称这个调度S是可串行化的。在数据库实现中，一般使用冲突可串行化技术。</p>
+<ul>
+<li>可恢复性</li>
+</ul>
+<p>已经提交的事务没有读过被终止的事务写过的数据，防止脏读异常。</p>
+<ul>
+<li>避免级联终止</li>
+</ul>
+<p>避免由于事务T1的终止而导致事务T2的终止。</p>
+<ul>
+<li>严格性</li>
+</ul>
+<p>先发生写操作的事务的提交或终止应先于其它冲突事务的提交或终止。</p>
+<table>
+<thead>
+<tr>
+<th>生产级NewSQL数据库</th>
+<th>并发控制</th>
+<th>隔离级别</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Spanner</td>
+<td>MVCC+SS2PL</td>
+<td>Linearizability</td>
+</tr>
+<tr>
+<td>Oceanbase 1.0</td>
+<td>MVCC+SS2PL</td>
+<td>RC</td>
+</tr>
+<tr>
+<td>CockroachDB 1.0</td>
+<td>MVCC+T&#x2F;O</td>
+<td>SSI</td>
+</tr>
+<tr>
+<td>TiDB 1.0</td>
+<td>MVCC+SS2PL</td>
+<td>SI</td>
+</tr>
+<tr>
+<td>FoundationDB 5.1</td>
+<td>MVCC+OCC</td>
+<td>SSI</td>
+</tr>
+</tbody></table>
+<p>FoundationDB 的 OCC 实现也有一些限制，比如官方文档对 KV 和事务的大小及时长做出了如下限制：</p>
+<ul>
+<li>key不超过10K；value不超过100K；事务不超过10M（包括所有读、写涉及的KV）</li>
+<li>仅支持运行时间不超过5s的读写事务</li>
+</ul>
+]]></content>
+      <tags>
+        <tag>OCC</tag>
+        <tag>NewSQL</tag>
       </tags>
   </entry>
   <entry>
@@ -220,150 +371,6 @@
 ]]></content>
       <tags>
         <tag>Publication</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>NewSQL 主流实现</title>
-    <url>/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/</url>
-    <content><![CDATA[<h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
-<h3 id="MVCC-OCC-x3D-SSI"><a href="#MVCC-OCC-x3D-SSI" class="headerlink" title="MVCC+OCC&#x3D;SSI"></a>MVCC+OCC&#x3D;SSI</h3><p>基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别</p>
-<h3 id="NewSQL-主流系统"><a href="#NewSQL-主流系统" class="headerlink" title="NewSQL 主流系统"></a>NewSQL 主流系统</h3><p>原生实现</p>
-<ul>
-<li>CockroachDB</li>
-<li>YugaByteDB</li>
-</ul>
-<p>NoSQL+ACID+SQL</p>
-<ul>
-<li>TiDB</li>
-<li>Trafodion</li>
-</ul>
-<span id="more"></span>
-
-<p>事务的并发控制是为了实现事务的调度，一个正确、高效的事务调度应满足如下属性：</p>
-<ul>
-<li>可串行化</li>
-</ul>
-<p>多个并发事务的调度S与一个串行化的调度产生相同的结果，则称这个调度S是可串行化的。在数据库实现中，一般使用冲突可串行化技术。</p>
-<ul>
-<li>可恢复性</li>
-</ul>
-<p>已经提交的事务没有读过被终止的事务写过的数据，防止脏读异常。</p>
-<ul>
-<li>避免级联终止</li>
-</ul>
-<p>避免由于事务T1的终止而导致事务T2的终止。</p>
-<ul>
-<li>严格性</li>
-</ul>
-<p>先发生写操作的事务的提交或终止应先于其它冲突事务的提交或终止。</p>
-<table>
-<thead>
-<tr>
-<th>生产级NewSQL数据库</th>
-<th>并发控制</th>
-<th>隔离级别</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Spanner</td>
-<td>MVCC+SS2PL</td>
-<td>Linearizability</td>
-</tr>
-<tr>
-<td>Oceanbase 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>RC</td>
-</tr>
-<tr>
-<td>CockroachDB 1.0</td>
-<td>MVCC+T&#x2F;O</td>
-<td>SSI</td>
-</tr>
-<tr>
-<td>TiDB 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>SI</td>
-</tr>
-<tr>
-<td>FoundationDB 5.1</td>
-<td>MVCC+OCC</td>
-<td>SSI</td>
-</tr>
-</tbody></table>
-<p>FoundationDB 的 OCC 实现也有一些限制，比如官方文档对 KV 和事务的大小及时长做出了如下限制：</p>
-<ul>
-<li>key不超过10K；value不超过100K；事务不超过10M（包括所有读、写涉及的KV）</li>
-<li>仅支持运行时间不超过5s的读写事务</li>
-</ul>
-]]></content>
-      <tags>
-        <tag>NewSQL</tag>
-        <tag>OCC</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>TKDE Reviewer Invitation</title>
-    <url>/2022/05/10/TKDE-Reviewer-Invitation/</url>
-    <content><![CDATA[<p><strong>TKDE</strong>(IEEE Transactions on Knowledge and Data Engineering) Reviewer <a href="https://publons.com/researcher/5190849/zerui-ge/">https://publons.com/researcher/5190849/zerui-ge/</a></p>
-]]></content>
-      <tags>
-        <tag>Publication</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>UUID</title>
-    <url>/2022/05/15/UUID/</url>
-    <content><![CDATA[<h3 id="UUID-特点"><a href="#UUID-特点" class="headerlink" title="UUID 特点"></a>UUID 特点</h3><ul>
-<li><p>经由一定的算法机器生成<br>为了保证UUID的唯一性，规范定义了包括网卡MAC地址、时间戳、名字空间（Namespace）、随机或伪随机数、时序等元素，以及从这些元素生成UUID的算法。UUID的复杂特性在保证了其唯一性的同时，意味着只能由计算机生成。</p>
-</li>
-<li><p>非人工指定，非人工识别<br>UUID是不能人工指定的，除非你冒着UUID重复的风险。UUID的复杂性决定了“一般人“不能直接从一个UUID知道哪个对象和它关联。</p>
-</li>
-<li><p>在特定的范围内重复的可能性极小<br>UUID的生成规范定义的算法主要目的就是要保证其唯一性。但这个唯一性是有限的，只在特定的范围内才能得到保证，这和UUID的类型有关（参见UUID的版本）。</p>
-</li>
-</ul>
-<span id="more"></span>
-
-<h3 id="Nil-UUID"><a href="#Nil-UUID" class="headerlink" title="Nil UUID"></a>Nil UUID</h3><p>通常我们不会用到它，它是由全为0的数字组成，如下：<br>00000000-0000-0000-0000-000000000000</p>
-<h3 id="UUID-Version-1：基于时间的UUID"><a href="#UUID-Version-1：基于时间的UUID" class="headerlink" title="UUID Version 1：基于时间的UUID"></a>UUID Version 1：基于时间的UUID</h3><p>基于时间的UUID通过计算当前时间戳、随机数和机器MAC地址得到。由于在算法中使用了MAC地址，这个版本的UUID可以保证在全球范围的唯一性。但与此同时，使用MAC地址会带来安全性问题，这就是这个版本UUID受到批评的地方。如果应用只是在局域网中使用，也可以使用退化的算法，以IP地址来代替MAC地址－－Java的UUID往往是这样实现的（当然也考虑了获取MAC的难度）。</p>
-<h3 id="UUID-Version-2：DCE安全的UUID"><a href="#UUID-Version-2：DCE安全的UUID" class="headerlink" title="UUID Version 2：DCE安全的UUID"></a>UUID Version 2：DCE安全的UUID</h3><p>DCE（Distributed Computing Environment）安全的UUID和基于时间的UUID算法相同，但会把时间戳的前4位置换为POSIX的UID或GID。这个版本的UUID在实际中较少用到。</p>
-<h3 id="UUID-Version-3：基于名字的UUID（MD5）"><a href="#UUID-Version-3：基于名字的UUID（MD5）" class="headerlink" title="UUID Version 3：基于名字的UUID（MD5）"></a>UUID Version 3：基于名字的UUID（MD5）</h3><p>基于名字的UUID通过计算名字和名字空间的MD5散列值得到。这个版本的UUID保证了：相同名字空间中不同名字生成的UUID的唯一性；不同名字空间中的UUID的唯一性；相同名字空间中相同名字的UUID重复生成是相同的。</p>
-<h3 id="UUID-Version-4：随机UUID"><a href="#UUID-Version-4：随机UUID" class="headerlink" title="UUID Version 4：随机UUID"></a>UUID Version 4：随机UUID</h3><p>根据随机数，或者伪随机数生成UUID。这种UUID产生重复的概率是可以计算出来的，但随机的东西就像是买彩票：你指望它发财是不可能的，但狗屎运通常会在不经意中到来。</p>
-<h3 id="UUID-Version-5：基于名字的UUID（SHA1）"><a href="#UUID-Version-5：基于名字的UUID（SHA1）" class="headerlink" title="UUID Version 5：基于名字的UUID（SHA1）"></a>UUID Version 5：基于名字的UUID（SHA1）</h3><p>和版本3的UUID算法类似，只是散列值计算使用SHA1（Secure Hash Algorithm 1）算法。</p>
-<h3 id="UUID-应用"><a href="#UUID-应用" class="headerlink" title="UUID 应用"></a>UUID 应用</h3><p>Version 1&#x2F;2 适合应用于分布式计算环境下，具有高度的唯一性。<br>Version 3&#x2F;5 适合于一定范围内名字唯一，且需要或可能会重复生成UUID的环境下。<br>Version 4 是最简单最方便的，理论碰撞概率非常低。</p>
-<p>通常使用 UUID Version 4，只有在需要特殊性质的时候选择别的：</p>
-<ul>
-<li>可按时间排序（<a href="https://github.com/ulid/spec">ULID 1</a> )</li>
-<li>encode 特殊信息（feature store &#x2F; seaweed id）</li>
-<li>长度&#x2F;编码效率（<a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake.html">Twitter Snowflake 2</a>）</li>
-</ul>
-<p>UUID 一般来标识对象或持久化数据，但以下情况最好不使用UUID：</p>
-<ul>
-<li><p>映射类型的对象。比如只有代码及名称的代码表。</p>
-</li>
-<li><p>人工维护的非系统生成对象。比如系统中的部分基础数据。</p>
-</li>
-<li><p>对于具有名称不可重复的自然特性的对象，最好使用 Version 3&#x2F;5 的 UUID。比如系统中的用户。如果用户的 UUID 是 Version 1 的，如果你不小心删除了再重建用户，你会发现人还是那个人，用户已经不是那个用户了。（虽然标记为删除状态也是一种解决方案，但会带来实现上的复杂性。）</p>
-</li>
-</ul>
-<h3 id="Twitter-Snowflake"><a href="#Twitter-Snowflake" class="headerlink" title="Twitter Snowflake"></a>Twitter Snowflake</h3><p>Twitter-Snowflake 算法产生的背景相当简单，为了满足Twitter每秒上万条消息的请求，每条消息都必须分配一条唯一的id，这些id还需要一些大致的顺序（方便客户端排序），并且在分布式系统中不同机器产生的id必须不同。</p>
-<h4 id="Snowflake算法核心"><a href="#Snowflake算法核心" class="headerlink" title="Snowflake算法核心"></a>Snowflake算法核心</h4><p>把<strong>时间戳</strong>，<strong>工作机器id</strong>，<strong>序列号</strong>组合在一起。</p>
-<p>无用（1bit）+ 时间戳（41bit）+ 工作机器ID（10bit）+ 序列号（12bit）</p>
-<p>除了最高位bit标记为不可用以外，其余三组bit占位均可浮动，看具体的业务需求而定。<strong>默认情况下41bit的时间戳可以支持该算法使用到2082年，10bit的工作机器id可以支持1023台机器，序列号支持1毫秒产生4095个自增序列id</strong>。</p>
-<h4 id="Snowflake-–-时间戳"><a href="#Snowflake-–-时间戳" class="headerlink" title="Snowflake – 时间戳"></a>Snowflake – 时间戳</h4><p>这里时间戳的细度是毫秒级，具体代码如下，建议使用64位linux系统机器，因为有<a href="http://man7.org/linux/man-pages/man7/vdso.7.html">vdso</a>，gettimeofday()在用户态就可以完成操作，减少了进入内核态的损耗。</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">generateStamp</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    timeval tv;</span><br><span class="line">    <span class="built_in">gettimeofday</span>(&amp;tv, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">return</span> (<span class="type">uint64_t</span>)tv.tv_sec * <span class="number">1000</span> + (<span class="type">uint64_t</span>)tv.tv_usec / <span class="number">1000</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>默认情况下有41个bit可以供使用，那么一共有T（2 ^ 41）毫秒供你使用分配，年份 &#x3D; T &#x2F; (3600 * 24 * 365 * 1000) &#x3D; 69.7年。如果你只给时间戳分配39个bit使用，那么根据同样的算法最后年份 &#x3D; 17.4年。</p>
-<h4 id="Snowflake-–-工作机器id"><a href="#Snowflake-–-工作机器id" class="headerlink" title="Snowflake – 工作机器id"></a>Snowflake – 工作机器id</h4><p>严格意义上来说这个bit段的使用可以是进程级，<strong>机器级的话你可以使用MAC地址来唯一标示工作机器</strong>，<strong>工作进程级可以使用IP+Path来区分工作进程</strong>。如果工作机器比较少，可以使用配置文件来设置这个id是一个不错的选择，如果机器过多配置文件的维护是一个灾难性的事情。</p>
-<p>这里的解决方案是需要一个工作id分配的进程，可以使用自己编写一个简单进程来记录分配id，或者利用Mysql auto_increment机制也可以达到效果。</p>
-<p>工作进程与工作id分配器只是在工作进程启动的时候交互一次，然后工作进程可以自行将分配的id数据落文件，下一次启动直接读取文件里的id使用。</p>
-<p>PS：这个工作机器id的bit段也可以进一步拆分，比如用前5个bit标记进程id，后5个bit标记线程id之类。</p>
-<h4 id="Snowflake-–-序列号"><a href="#Snowflake-–-序列号" class="headerlink" title="Snowflake – 序列号"></a>Snowflake – 序列号</h4><p>序列号就是一系列的自增id（多线程建议使用atomic），为了处理在同一毫秒内需要给多条消息分配id，若同一毫秒把序列号用完了，则“等待至下一毫秒”。</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">waitNextMs</span><span class="params">(<span class="type">uint64_t</span> lastStamp)</span> </span>&#123;</span><br><span class="line">    <span class="type">uint64_t</span> cur = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">        cur = <span class="built_in">generateStamp</span>();</span><br><span class="line">    &#125; <span class="keyword">while</span> (cur &lt;= lastStamp);</span><br><span class="line">    <span class="keyword">return</span> cur;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>总体来说，是一个很高效很方便的GUID产生算法，一个int64_t字段就可以胜任，不像现在主流128bit的GUID算法，即使无法保证严格的id序列性，但是对于特定的业务，比如用做游戏服务器端的GUID产生会很方便。另外，在多线程的环境下，序列号使用atomic可以在代码实现上有效减少锁的密度。</p>
-]]></content>
-      <tags>
-        <tag>Engineering</tag>
       </tags>
   </entry>
   <entry>
@@ -539,6 +546,71 @@
       </tags>
   </entry>
   <entry>
+    <title>TKDE Reviewer Invitation</title>
+    <url>/2022/05/10/TKDE-Reviewer-Invitation/</url>
+    <content><![CDATA[<p><strong>TKDE</strong>(IEEE Transactions on Knowledge and Data Engineering) Reviewer <a href="https://publons.com/researcher/5190849/zerui-ge/">https://publons.com/researcher/5190849/zerui-ge/</a></p>
+]]></content>
+      <tags>
+        <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>UUID</title>
+    <url>/2022/05/15/UUID/</url>
+    <content><![CDATA[<h3 id="UUID-特点"><a href="#UUID-特点" class="headerlink" title="UUID 特点"></a>UUID 特点</h3><ul>
+<li><p>经由一定的算法机器生成<br>为了保证UUID的唯一性，规范定义了包括网卡MAC地址、时间戳、名字空间（Namespace）、随机或伪随机数、时序等元素，以及从这些元素生成UUID的算法。UUID的复杂特性在保证了其唯一性的同时，意味着只能由计算机生成。</p>
+</li>
+<li><p>非人工指定，非人工识别<br>UUID是不能人工指定的，除非你冒着UUID重复的风险。UUID的复杂性决定了“一般人“不能直接从一个UUID知道哪个对象和它关联。</p>
+</li>
+<li><p>在特定的范围内重复的可能性极小<br>UUID的生成规范定义的算法主要目的就是要保证其唯一性。但这个唯一性是有限的，只在特定的范围内才能得到保证，这和UUID的类型有关（参见UUID的版本）。</p>
+</li>
+</ul>
+<span id="more"></span>
+
+<h3 id="Nil-UUID"><a href="#Nil-UUID" class="headerlink" title="Nil UUID"></a>Nil UUID</h3><p>通常我们不会用到它，它是由全为0的数字组成，如下：<br>00000000-0000-0000-0000-000000000000</p>
+<h3 id="UUID-Version-1：基于时间的UUID"><a href="#UUID-Version-1：基于时间的UUID" class="headerlink" title="UUID Version 1：基于时间的UUID"></a>UUID Version 1：基于时间的UUID</h3><p>基于时间的UUID通过计算当前时间戳、随机数和机器MAC地址得到。由于在算法中使用了MAC地址，这个版本的UUID可以保证在全球范围的唯一性。但与此同时，使用MAC地址会带来安全性问题，这就是这个版本UUID受到批评的地方。如果应用只是在局域网中使用，也可以使用退化的算法，以IP地址来代替MAC地址－－Java的UUID往往是这样实现的（当然也考虑了获取MAC的难度）。</p>
+<h3 id="UUID-Version-2：DCE安全的UUID"><a href="#UUID-Version-2：DCE安全的UUID" class="headerlink" title="UUID Version 2：DCE安全的UUID"></a>UUID Version 2：DCE安全的UUID</h3><p>DCE（Distributed Computing Environment）安全的UUID和基于时间的UUID算法相同，但会把时间戳的前4位置换为POSIX的UID或GID。这个版本的UUID在实际中较少用到。</p>
+<h3 id="UUID-Version-3：基于名字的UUID（MD5）"><a href="#UUID-Version-3：基于名字的UUID（MD5）" class="headerlink" title="UUID Version 3：基于名字的UUID（MD5）"></a>UUID Version 3：基于名字的UUID（MD5）</h3><p>基于名字的UUID通过计算名字和名字空间的MD5散列值得到。这个版本的UUID保证了：相同名字空间中不同名字生成的UUID的唯一性；不同名字空间中的UUID的唯一性；相同名字空间中相同名字的UUID重复生成是相同的。</p>
+<h3 id="UUID-Version-4：随机UUID"><a href="#UUID-Version-4：随机UUID" class="headerlink" title="UUID Version 4：随机UUID"></a>UUID Version 4：随机UUID</h3><p>根据随机数，或者伪随机数生成UUID。这种UUID产生重复的概率是可以计算出来的，但随机的东西就像是买彩票：你指望它发财是不可能的，但狗屎运通常会在不经意中到来。</p>
+<h3 id="UUID-Version-5：基于名字的UUID（SHA1）"><a href="#UUID-Version-5：基于名字的UUID（SHA1）" class="headerlink" title="UUID Version 5：基于名字的UUID（SHA1）"></a>UUID Version 5：基于名字的UUID（SHA1）</h3><p>和版本3的UUID算法类似，只是散列值计算使用SHA1（Secure Hash Algorithm 1）算法。</p>
+<h3 id="UUID-应用"><a href="#UUID-应用" class="headerlink" title="UUID 应用"></a>UUID 应用</h3><p>Version 1&#x2F;2 适合应用于分布式计算环境下，具有高度的唯一性。<br>Version 3&#x2F;5 适合于一定范围内名字唯一，且需要或可能会重复生成UUID的环境下。<br>Version 4 是最简单最方便的，理论碰撞概率非常低。</p>
+<p>通常使用 UUID Version 4，只有在需要特殊性质的时候选择别的：</p>
+<ul>
+<li>可按时间排序（<a href="https://github.com/ulid/spec">ULID 1</a> )</li>
+<li>encode 特殊信息（feature store &#x2F; seaweed id）</li>
+<li>长度&#x2F;编码效率（<a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake.html">Twitter Snowflake 2</a>）</li>
+</ul>
+<p>UUID 一般来标识对象或持久化数据，但以下情况最好不使用UUID：</p>
+<ul>
+<li><p>映射类型的对象。比如只有代码及名称的代码表。</p>
+</li>
+<li><p>人工维护的非系统生成对象。比如系统中的部分基础数据。</p>
+</li>
+<li><p>对于具有名称不可重复的自然特性的对象，最好使用 Version 3&#x2F;5 的 UUID。比如系统中的用户。如果用户的 UUID 是 Version 1 的，如果你不小心删除了再重建用户，你会发现人还是那个人，用户已经不是那个用户了。（虽然标记为删除状态也是一种解决方案，但会带来实现上的复杂性。）</p>
+</li>
+</ul>
+<h3 id="Twitter-Snowflake"><a href="#Twitter-Snowflake" class="headerlink" title="Twitter Snowflake"></a>Twitter Snowflake</h3><p>Twitter-Snowflake 算法产生的背景相当简单，为了满足Twitter每秒上万条消息的请求，每条消息都必须分配一条唯一的id，这些id还需要一些大致的顺序（方便客户端排序），并且在分布式系统中不同机器产生的id必须不同。</p>
+<h4 id="Snowflake算法核心"><a href="#Snowflake算法核心" class="headerlink" title="Snowflake算法核心"></a>Snowflake算法核心</h4><p>把<strong>时间戳</strong>，<strong>工作机器id</strong>，<strong>序列号</strong>组合在一起。</p>
+<p>无用（1bit）+ 时间戳（41bit）+ 工作机器ID（10bit）+ 序列号（12bit）</p>
+<p>除了最高位bit标记为不可用以外，其余三组bit占位均可浮动，看具体的业务需求而定。<strong>默认情况下41bit的时间戳可以支持该算法使用到2082年，10bit的工作机器id可以支持1023台机器，序列号支持1毫秒产生4095个自增序列id</strong>。</p>
+<h4 id="Snowflake-–-时间戳"><a href="#Snowflake-–-时间戳" class="headerlink" title="Snowflake – 时间戳"></a>Snowflake – 时间戳</h4><p>这里时间戳的细度是毫秒级，具体代码如下，建议使用64位linux系统机器，因为有<a href="http://man7.org/linux/man-pages/man7/vdso.7.html">vdso</a>，gettimeofday()在用户态就可以完成操作，减少了进入内核态的损耗。</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">generateStamp</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    timeval tv;</span><br><span class="line">    <span class="built_in">gettimeofday</span>(&amp;tv, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">return</span> (<span class="type">uint64_t</span>)tv.tv_sec * <span class="number">1000</span> + (<span class="type">uint64_t</span>)tv.tv_usec / <span class="number">1000</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>默认情况下有41个bit可以供使用，那么一共有T（2 ^ 41）毫秒供你使用分配，年份 &#x3D; T &#x2F; (3600 * 24 * 365 * 1000) &#x3D; 69.7年。如果你只给时间戳分配39个bit使用，那么根据同样的算法最后年份 &#x3D; 17.4年。</p>
+<h4 id="Snowflake-–-工作机器id"><a href="#Snowflake-–-工作机器id" class="headerlink" title="Snowflake – 工作机器id"></a>Snowflake – 工作机器id</h4><p>严格意义上来说这个bit段的使用可以是进程级，<strong>机器级的话你可以使用MAC地址来唯一标示工作机器</strong>，<strong>工作进程级可以使用IP+Path来区分工作进程</strong>。如果工作机器比较少，可以使用配置文件来设置这个id是一个不错的选择，如果机器过多配置文件的维护是一个灾难性的事情。</p>
+<p>这里的解决方案是需要一个工作id分配的进程，可以使用自己编写一个简单进程来记录分配id，或者利用Mysql auto_increment机制也可以达到效果。</p>
+<p>工作进程与工作id分配器只是在工作进程启动的时候交互一次，然后工作进程可以自行将分配的id数据落文件，下一次启动直接读取文件里的id使用。</p>
+<p>PS：这个工作机器id的bit段也可以进一步拆分，比如用前5个bit标记进程id，后5个bit标记线程id之类。</p>
+<h4 id="Snowflake-–-序列号"><a href="#Snowflake-–-序列号" class="headerlink" title="Snowflake – 序列号"></a>Snowflake – 序列号</h4><p>序列号就是一系列的自增id（多线程建议使用atomic），为了处理在同一毫秒内需要给多条消息分配id，若同一毫秒把序列号用完了，则“等待至下一毫秒”。</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">waitNextMs</span><span class="params">(<span class="type">uint64_t</span> lastStamp)</span> </span>&#123;</span><br><span class="line">    <span class="type">uint64_t</span> cur = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">        cur = <span class="built_in">generateStamp</span>();</span><br><span class="line">    &#125; <span class="keyword">while</span> (cur &lt;= lastStamp);</span><br><span class="line">    <span class="keyword">return</span> cur;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>总体来说，是一个很高效很方便的GUID产生算法，一个int64_t字段就可以胜任，不像现在主流128bit的GUID算法，即使无法保证严格的id序列性，但是对于特定的业务，比如用做游戏服务器端的GUID产生会很方便。另外，在多线程的环境下，序列号使用atomic可以在代码实现上有效减少锁的密度。</p>
+]]></content>
+      <tags>
+        <tag>Engineering</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Varint</title>
     <url>/2022/05/15/Varint/</url>
     <content><![CDATA[<h3 id="Varint-编码原理"><a href="#Varint-编码原理" class="headerlink" title="Varint 编码原理"></a>Varint 编码原理</h3><p>除了最后一个字节外，varint 编码中的每个字节都设置了最高有效位 (most significant bit - msb)</p>
@@ -594,6 +666,12 @@
       </tags>
   </entry>
   <entry>
+    <title>Hello World</title>
+    <url>/2022/04/10/hello-world/</url>
+    <content><![CDATA[<p>Hello World!</p>
+]]></content>
+  </entry>
+  <entry>
     <title>bug of Golang httputil.ReverseProxy</title>
     <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
     <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
@@ -605,11 +683,5 @@
       <tags>
         <tag>Golang</tag>
       </tags>
-  </entry>
-  <entry>
-    <title>Hello World</title>
-    <url>/2022/04/10/hello-world/</url>
-    <content><![CDATA[<p>Hello World!</p>
-]]></content>
   </entry>
 </search>
