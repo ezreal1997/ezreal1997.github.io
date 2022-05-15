@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.1.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":true},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="引言这篇 Paper 将的都是如何解决 LSM-Tree 的写放大的问题。Wisckey的基本思路其实很简单，使用的方法就是将Key和Value分开保存的方式，对于读取Value时造成的随机读写问题，Wisckey则认为这个在SSD上的问题能得到缓解，也使用了预取，并行读等的一些优化方式。在SOSP‘17上面的 PebblesDB 则对 LSM-Tree 的结构进行了比较好的改进，个人认为这个是一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="WiscKey: Separating Keys from Values in SSD-conscious Storage">
+<meta property="og:url" content="http://example.com/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/index.html">
+<meta property="og:site_name" content="ezreal&#39;s blog">
+<meta property="og:description" content="引言这篇 Paper 将的都是如何解决 LSM-Tree 的写放大的问题。Wisckey的基本思路其实很简单，使用的方法就是将Key和Value分开保存的方式，对于读取Value时造成的随机读写问题，Wisckey则认为这个在SSD上的问题能得到缓解，也使用了预取，并行读等的一些优化方式。在SOSP‘17上面的 PebblesDB 则对 LSM-Tree 的结构进行了比较好的改进，个人认为这个是一">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_1.png">
+<meta property="og:image" content="http://example.com/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_2.png">
+<meta property="og:image" content="http://example.com/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_3.png">
+<meta property="article:published_time" content="2022-05-15T12:49:59.000Z">
+<meta property="article:modified_time" content="2022-05-15T12:54:25.536Z">
+<meta property="article:author" content="ezreal">
+<meta property="article:tag" content="Paper">
+<meta property="article:tag" content="LSM">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_1.png">
+
+<link rel="canonical" href="http://example.com/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>WiscKey: Separating Keys from Values in SSD-conscious Storage | ezreal's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">ezreal's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="ezreal">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ezreal's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          WiscKey: Separating Keys from Values in SSD-conscious Storage
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-05-15 20:49:59 / Modified: 20:54:25" itemprop="dateCreated datePublished" datetime="2022-05-15T20:49:59+08:00">2022-05-15</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h3 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h3><p>这篇 Paper 将的都是如何解决 LSM-Tree 的写放大的问题。Wisckey的基本思路其实很简单，使用的方法就是将Key和Value分开保存的方式，对于读取Value时造成的随机读写问题，Wisckey则认为这个在SSD上的问题能得到缓解，也使用了预取，并行读等的一些优化方式。在SOSP‘17上面的 PebblesDB 则对 LSM-Tree 的结构进行了比较好的改进，个人认为这个是一种更加好的方式。WiscKey的设计目标是为随机性能比较好的SSD优化的，因为它的设计会导致比较多的随机读，它在测试数据中实现了,</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">We demonstrate the advantages of WiscKey with both microbenchmarks and YCSB workloads. Microbenchmark results show that WiscKey is 2.5×–111× faster than LevelDB for loading a database and 1.6×–14× faster for random lookups. WiscKey is faster than both LevelDB and RocksDB in all six YCSB workloads.</span><br></pre></td></tr></table></figure>
+
+<span id="more"></span>
+
+<h3 id="Key-Value-Separation"><a href="#Key-Value-Separation" class="headerlink" title="Key-Value Separation"></a>Key-Value Separation</h3><p>WiscKey的核心思路基本就是将Key-Value分开保存了。在LSM-Tree中，每次merge的操作会造成写放大的问题，但如果将里面的Value拿出来分开保存，直接保存在LSM-Tree的数据就减小很多，因为一般情况下，Key的尺寸远小于Value的尺寸。直接在LSM-Tree就只需要保存Value的地址信息。这个思路和bitcask的思路很相似。不同点：bitcask的索引结构一般为hash table，当然使用skip list之类的数据结构也完全是可以的；另外一个不同点就是bitcask的索引都是全部保存在内存里面的，也会定期的持久化到磁盘上面。</p>
+<p><img src="/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_1.png" alt="Wisckey Data Layout on SSD"></p>
+<p>如上图所示，Key Values-Address的pair保存在LSM-Tree里面，而Value本身就保存在类似Log的结构里面。由于Key Value之间很大的尺寸差异，这样LSM-Tree里面实际保存的数据就会大大减小，也就能很大程度上解决写入放大的问题:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">For example, assuming a 16-B key, a 1KB value, and a write amplification of 10 for keys (in the LSM-tree) and 1 for values, the effective write amplification of WiscKey is only (10 × 16 + 1024) / (16 + 1024) = 1.14. In addition to improving the write performance of applications, the reduced write amplification also improves an SSD’s lifetime by requiring fewer erase cycles.</span><br></pre></td></tr></table></figure>
+
+<h3 id="要解决的问题"><a href="#要解决的问题" class="headerlink" title="要解决的问题"></a>要解决的问题</h3><ul>
+<li><p>Parallel Range Query，这是WiscKey要处理的一个最主要的问题，范围查询对于LevelDB之类的将Key和Value放在一起的设计来说，这个做起来就很简单。对于WiscKey来说，这就因为着会产生大量的随机读操作，当然就会影响到性能。这里WiscKey的拒绝办法是利用SSD设备的并行IO的能力，对于范围查询，WiscKey对Next() or Prev() 的请求，会分析访问的模式，一旦一个发现是一个连续的顺序访问，WiscKey就会读取画面的若干的Key，然后并发的使用这些Key信息去取回Value。</p>
+</li>
+<li><p>Garbage Collection，一般的LSM-Tree的设计垃圾回收是在compaction的时候进行的，对于WiscKey来说，这里要处理的问题是，直接扫描Value Log(vLog)处理的方式是不好的，会带来太大的overhead。未来解决这个问题，这里处理的方式是对WiscKey的Data Layout进行少许的修改，在vLog里面不仅仅是保存了数据，而是以这样的方式保存<code>(key size, value size, key, value) </code>。WiscKey的垃圾回收的一个目标就是将有效的Value保存在一个连续的范围之内。如下面的图所示，在vLog里面，有一个head代表了写入的位置，一个tail代表了垃圾回收要处理的开始的位置。垃圾回收的是，WsicKey先读区几个MB的数据，检查里面合法的数据，然后将这些数据写入到head。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">To avoid losing any data if a crash happens during garbage collection, WiscKey has to make sure that the newly appended valid values and the new tail are persistent on the device before actually freeing space.</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>Crash Consistency，即使这里Key Value是分开保存的，WiscKey依然可以提供Crash Consistency。在系统崩溃的时候可能出现只有一部分的数据被append的vLog的后面，也可以保存如果Value X在carsh中丢失了，后面的数据也都会丢失，不会出现随机的一些bytes or 不是Value前缀的数据被添加进去。当查询是，WiscKey如果发现一个Key在LSM-Tree中发现不了，就会认为这个数据在Carsh中丢失了。如果能在LSM-Tree中被发现，则会检查数据的合法性，如果检查不通过，就会认为这个Value在Crash中被丢失了，</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">In this case, WiscKey first verifies whether the value address retrieved from the LSM-tree falls within the current valid range of the vLog, and then whether the value found corresponds to the queried key. If the verifications fail, WiscKey assumes that the value was lost during a system crash, deletes the key from the LSM- tree, and informs the user that the key was not found.</span><br></pre></td></tr></table></figure></li>
+</ul>
+<p><img src="/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_2.png" alt="Wisckey New Data Layout for GC"></p>
+<h3 id="优化"><a href="#优化" class="headerlink" title="优化"></a>优化</h3><ul>
+<li><p>Value-Log Write Buffer，这个优化是一个显而易见的优化，资额vLog的时候最好就是积攒了一些数据之后在写入到文件里面。添加了这个write buffer之后，要添加的一个处理就是查找的时候要先查找这个buffer里面的数据，因为这里的数据还是在内存里面的。</p>
+</li>
+<li><p>Optimizing the LSM-tree Log，这也是一个很好的优化，前面提到的在vLog里面的数据是既有Value也有Key的，这样的话就不用在额外使用Log了。为了加快Crash之后的恢复的速度，WiscKey周期性的在vLog的head里面添加一个<code>&lt;‘‘head’’, head-vLog-offset&gt;</code>，这个就类似于一个checkpoint的机制，</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">WiscKey records the head of the vLog periodically in the LSM-tree, as a key-value pair &lt;‘‘head’’, head-vLog-offset&gt;. When a database is opened, WiscKey starts the vLog scan from the most recent head position stored in the LSM-tree, and continues scanning until the end of the vLog. Since the head is stored in the LSM-tree, and the LSM-tree inherently guarantees that keys inserted into the LSM-tree will be recovered in the inserted order, this optimization is crash consistent.</span><br></pre></td></tr></table></figure></li>
+</ul>
+<h3 id="评估"><a href="#评估" class="headerlink" title="评估"></a>评估</h3><p>基本的性能数据(详细的数据参看论文):</p>
+<p><img src="/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_3.png" alt="Wisckey Performance"></p>
+<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>这个在一些随机性能非常好的SSD上面是一种非常有效的办法。对于现在的很多NVMe的SSD来说，4K的随机性能以及是几十万的基本了。这个办法的优势在于它的简单，而且很有效。另外，感觉这里的写入和垃圾回收还是可以有优化的空间的。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Paper/" rel="tag"># Paper</a>
+              <a href="/tags/LSM/" rel="tag"># LSM</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2022/05/15/Varint/" rel="prev" title="Varint">
+      <i class="fa fa-chevron-left"></i> Varint
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BC%95%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">引言</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Key-Value-Separation"><span class="nav-number">2.</span> <span class="nav-text">Key-Value Separation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A6%81%E8%A7%A3%E5%86%B3%E7%9A%84%E9%97%AE%E9%A2%98"><span class="nav-number">3.</span> <span class="nav-text">要解决的问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BC%98%E5%8C%96"><span class="nav-number">4.</span> <span class="nav-text">优化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%84%E4%BC%B0"><span class="nav-number">5.</span> <span class="nav-text">评估</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">6.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">ezreal</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">12</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">8</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">ezreal</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

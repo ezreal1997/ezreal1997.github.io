@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>Interesting Golang</title>
+    <url>/2022/05/12/Interesting-Golang/</url>
+    <content><![CDATA[<p>Golang interesting design</p>
+<span id="more"></span>
+
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;fmt&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> A <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(a *A)</span></span> pointerFunc() &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;nil pointer function&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init1&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init2&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">foo0</span><span class="params">()</span></span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">    x := <span class="number">1</span></span><br><span class="line">    f := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Printf(<span class="string">&quot;foo0 val = %d\n&quot;</span>, x)</span><br><span class="line">    &#125;</span><br><span class="line">    x = <span class="number">11</span></span><br><span class="line">    <span class="keyword">return</span> f</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">var</span> ap *A</span><br><span class="line">    ap.pointerFunc()</span><br><span class="line"></span><br><span class="line">    val := <span class="number">1997</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">defer</span> fmt.Println(<span class="string">&quot;defer1 val:&quot;</span>, val)</span><br><span class="line">    <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Println(<span class="string">&quot;defer2 val:&quot;</span>, val)</span><br><span class="line">    &#125;()</span><br><span class="line">    val = <span class="number">1998</span></span><br><span class="line"></span><br><span class="line">    a := [<span class="number">6</span>]<span class="type">int</span>&#123;<span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;</span><br><span class="line"></span><br><span class="line">    s := a[<span class="number">0</span>:<span class="number">5</span>]</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">55</span>)</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">100</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">6</span>)</span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">1000</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    foo0()()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> i, v := <span class="keyword">range</span> a &#123;</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            fmt.Println(<span class="string">&quot;goroutine print:&quot;</span>, i, v)</span><br><span class="line">        &#125;()</span><br><span class="line">        v = <span class="number">0</span></span><br><span class="line">    &#125;</span><br><span class="line">    fmt.Println(a)</span><br><span class="line"></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+]]></content>
+      <tags>
+        <tag>Golang</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Golang HTTP transport</title>
     <url>/2022/05/12/Golang-HTTP-transport/</url>
     <content><![CDATA[<p>使用golang net&#x2F;http库发送http请求，最后都是调用 transport的 RoundTrip方法</p>
@@ -59,18 +71,6 @@
 
 <p>写循环就更简单了，select channel中主gouroutine的request，然后写入tcp输入流，如果出错了，channel 通知调用者。</p>
 <p>整体看下来，过程都很简单，但是代码中有很多值得我们学习的地方，比如高并发请求如何复用tcp连接，这里是连接池的做法，如果使用多个 goroutine相互协作完成一个http请求，出现错误的时候如何通知调用者中断错误，代码风格也有很多可以借鉴的地方。</p>
-]]></content>
-      <tags>
-        <tag>Golang</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Interesting Golang</title>
-    <url>/2022/05/12/Interesting-Golang/</url>
-    <content><![CDATA[<p>Golang interesting design</p>
-<span id="more"></span>
-
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;fmt&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> A <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(a *A)</span></span> pointerFunc() &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;nil pointer function&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init1&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Println(<span class="string">&quot;init2&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">foo0</span><span class="params">()</span></span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">    x := <span class="number">1</span></span><br><span class="line">    f := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Printf(<span class="string">&quot;foo0 val = %d\n&quot;</span>, x)</span><br><span class="line">    &#125;</span><br><span class="line">    x = <span class="number">11</span></span><br><span class="line">    <span class="keyword">return</span> f</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">var</span> ap *A</span><br><span class="line">    ap.pointerFunc()</span><br><span class="line"></span><br><span class="line">    val := <span class="number">1997</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">defer</span> fmt.Println(<span class="string">&quot;defer1 val:&quot;</span>, val)</span><br><span class="line">    <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Println(<span class="string">&quot;defer2 val:&quot;</span>, val)</span><br><span class="line">    &#125;()</span><br><span class="line">    val = <span class="number">1998</span></span><br><span class="line"></span><br><span class="line">    a := [<span class="number">6</span>]<span class="type">int</span>&#123;<span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;</span><br><span class="line"></span><br><span class="line">    s := a[<span class="number">0</span>:<span class="number">5</span>]</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">55</span>)</span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">100</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    s = <span class="built_in">append</span>(s, <span class="number">6</span>)</span><br><span class="line">    s[<span class="number">0</span>] = <span class="number">1000</span></span><br><span class="line">    fmt.Println(a, s)</span><br><span class="line"></span><br><span class="line">    foo0()()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> i, v := <span class="keyword">range</span> a &#123;</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            fmt.Println(<span class="string">&quot;goroutine print:&quot;</span>, i, v)</span><br><span class="line">        &#125;()</span><br><span class="line">        v = <span class="number">0</span></span><br><span class="line">    &#125;</span><br><span class="line">    fmt.Println(a)</span><br><span class="line"></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 ]]></content>
       <tags>
         <tag>Golang</tag>
@@ -214,6 +214,15 @@
       </tags>
   </entry>
   <entry>
+    <title>Paper accepted by VLDB 2022</title>
+    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
+    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
+]]></content>
+      <tags>
+        <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>NewSQL 主流实现</title>
     <url>/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/</url>
     <content><![CDATA[<h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
@@ -290,6 +299,71 @@
       <tags>
         <tag>NewSQL</tag>
         <tag>OCC</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>TKDE Reviewer Invitation</title>
+    <url>/2022/05/10/TKDE-Reviewer-Invitation/</url>
+    <content><![CDATA[<p><strong>TKDE</strong>(IEEE Transactions on Knowledge and Data Engineering) Reviewer <a href="https://publons.com/researcher/5190849/zerui-ge/">https://publons.com/researcher/5190849/zerui-ge/</a></p>
+]]></content>
+      <tags>
+        <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>UUID</title>
+    <url>/2022/05/15/UUID/</url>
+    <content><![CDATA[<h3 id="UUID-特点"><a href="#UUID-特点" class="headerlink" title="UUID 特点"></a>UUID 特点</h3><ul>
+<li><p>经由一定的算法机器生成<br>为了保证UUID的唯一性，规范定义了包括网卡MAC地址、时间戳、名字空间（Namespace）、随机或伪随机数、时序等元素，以及从这些元素生成UUID的算法。UUID的复杂特性在保证了其唯一性的同时，意味着只能由计算机生成。</p>
+</li>
+<li><p>非人工指定，非人工识别<br>UUID是不能人工指定的，除非你冒着UUID重复的风险。UUID的复杂性决定了“一般人“不能直接从一个UUID知道哪个对象和它关联。</p>
+</li>
+<li><p>在特定的范围内重复的可能性极小<br>UUID的生成规范定义的算法主要目的就是要保证其唯一性。但这个唯一性是有限的，只在特定的范围内才能得到保证，这和UUID的类型有关（参见UUID的版本）。</p>
+</li>
+</ul>
+<span id="more"></span>
+
+<h3 id="Nil-UUID"><a href="#Nil-UUID" class="headerlink" title="Nil UUID"></a>Nil UUID</h3><p>通常我们不会用到它，它是由全为0的数字组成，如下：<br>00000000-0000-0000-0000-000000000000</p>
+<h3 id="UUID-Version-1：基于时间的UUID"><a href="#UUID-Version-1：基于时间的UUID" class="headerlink" title="UUID Version 1：基于时间的UUID"></a>UUID Version 1：基于时间的UUID</h3><p>基于时间的UUID通过计算当前时间戳、随机数和机器MAC地址得到。由于在算法中使用了MAC地址，这个版本的UUID可以保证在全球范围的唯一性。但与此同时，使用MAC地址会带来安全性问题，这就是这个版本UUID受到批评的地方。如果应用只是在局域网中使用，也可以使用退化的算法，以IP地址来代替MAC地址－－Java的UUID往往是这样实现的（当然也考虑了获取MAC的难度）。</p>
+<h3 id="UUID-Version-2：DCE安全的UUID"><a href="#UUID-Version-2：DCE安全的UUID" class="headerlink" title="UUID Version 2：DCE安全的UUID"></a>UUID Version 2：DCE安全的UUID</h3><p>DCE（Distributed Computing Environment）安全的UUID和基于时间的UUID算法相同，但会把时间戳的前4位置换为POSIX的UID或GID。这个版本的UUID在实际中较少用到。</p>
+<h3 id="UUID-Version-3：基于名字的UUID（MD5）"><a href="#UUID-Version-3：基于名字的UUID（MD5）" class="headerlink" title="UUID Version 3：基于名字的UUID（MD5）"></a>UUID Version 3：基于名字的UUID（MD5）</h3><p>基于名字的UUID通过计算名字和名字空间的MD5散列值得到。这个版本的UUID保证了：相同名字空间中不同名字生成的UUID的唯一性；不同名字空间中的UUID的唯一性；相同名字空间中相同名字的UUID重复生成是相同的。</p>
+<h3 id="UUID-Version-4：随机UUID"><a href="#UUID-Version-4：随机UUID" class="headerlink" title="UUID Version 4：随机UUID"></a>UUID Version 4：随机UUID</h3><p>根据随机数，或者伪随机数生成UUID。这种UUID产生重复的概率是可以计算出来的，但随机的东西就像是买彩票：你指望它发财是不可能的，但狗屎运通常会在不经意中到来。</p>
+<h3 id="UUID-Version-5：基于名字的UUID（SHA1）"><a href="#UUID-Version-5：基于名字的UUID（SHA1）" class="headerlink" title="UUID Version 5：基于名字的UUID（SHA1）"></a>UUID Version 5：基于名字的UUID（SHA1）</h3><p>和版本3的UUID算法类似，只是散列值计算使用SHA1（Secure Hash Algorithm 1）算法。</p>
+<h3 id="UUID-应用"><a href="#UUID-应用" class="headerlink" title="UUID 应用"></a>UUID 应用</h3><p>Version 1&#x2F;2 适合应用于分布式计算环境下，具有高度的唯一性。<br>Version 3&#x2F;5 适合于一定范围内名字唯一，且需要或可能会重复生成UUID的环境下。<br>Version 4 是最简单最方便的，理论碰撞概率非常低。</p>
+<p>通常使用 UUID Version 4，只有在需要特殊性质的时候选择别的：</p>
+<ul>
+<li>可按时间排序（<a href="https://github.com/ulid/spec">ULID 1</a> )</li>
+<li>encode 特殊信息（feature store &#x2F; seaweed id）</li>
+<li>长度&#x2F;编码效率（<a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake.html">Twitter Snowflake 2</a>）</li>
+</ul>
+<p>UUID 一般来标识对象或持久化数据，但以下情况最好不使用UUID：</p>
+<ul>
+<li><p>映射类型的对象。比如只有代码及名称的代码表。</p>
+</li>
+<li><p>人工维护的非系统生成对象。比如系统中的部分基础数据。</p>
+</li>
+<li><p>对于具有名称不可重复的自然特性的对象，最好使用 Version 3&#x2F;5 的 UUID。比如系统中的用户。如果用户的 UUID 是 Version 1 的，如果你不小心删除了再重建用户，你会发现人还是那个人，用户已经不是那个用户了。（虽然标记为删除状态也是一种解决方案，但会带来实现上的复杂性。）</p>
+</li>
+</ul>
+<h3 id="Twitter-Snowflake"><a href="#Twitter-Snowflake" class="headerlink" title="Twitter Snowflake"></a>Twitter Snowflake</h3><p>Twitter-Snowflake 算法产生的背景相当简单，为了满足Twitter每秒上万条消息的请求，每条消息都必须分配一条唯一的id，这些id还需要一些大致的顺序（方便客户端排序），并且在分布式系统中不同机器产生的id必须不同。</p>
+<h4 id="Snowflake算法核心"><a href="#Snowflake算法核心" class="headerlink" title="Snowflake算法核心"></a>Snowflake算法核心</h4><p>把<strong>时间戳</strong>，<strong>工作机器id</strong>，<strong>序列号</strong>组合在一起。</p>
+<p>无用（1bit）+ 时间戳（41bit）+ 工作机器ID（10bit）+ 序列号（12bit）</p>
+<p>除了最高位bit标记为不可用以外，其余三组bit占位均可浮动，看具体的业务需求而定。<strong>默认情况下41bit的时间戳可以支持该算法使用到2082年，10bit的工作机器id可以支持1023台机器，序列号支持1毫秒产生4095个自增序列id</strong>。</p>
+<h4 id="Snowflake-–-时间戳"><a href="#Snowflake-–-时间戳" class="headerlink" title="Snowflake – 时间戳"></a>Snowflake – 时间戳</h4><p>这里时间戳的细度是毫秒级，具体代码如下，建议使用64位linux系统机器，因为有<a href="http://man7.org/linux/man-pages/man7/vdso.7.html">vdso</a>，gettimeofday()在用户态就可以完成操作，减少了进入内核态的损耗。</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">generateStamp</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    timeval tv;</span><br><span class="line">    <span class="built_in">gettimeofday</span>(&amp;tv, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">return</span> (<span class="type">uint64_t</span>)tv.tv_sec * <span class="number">1000</span> + (<span class="type">uint64_t</span>)tv.tv_usec / <span class="number">1000</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>默认情况下有41个bit可以供使用，那么一共有T（2 ^ 41）毫秒供你使用分配，年份 &#x3D; T &#x2F; (3600 * 24 * 365 * 1000) &#x3D; 69.7年。如果你只给时间戳分配39个bit使用，那么根据同样的算法最后年份 &#x3D; 17.4年。</p>
+<h4 id="Snowflake-–-工作机器id"><a href="#Snowflake-–-工作机器id" class="headerlink" title="Snowflake – 工作机器id"></a>Snowflake – 工作机器id</h4><p>严格意义上来说这个bit段的使用可以是进程级，<strong>机器级的话你可以使用MAC地址来唯一标示工作机器</strong>，<strong>工作进程级可以使用IP+Path来区分工作进程</strong>。如果工作机器比较少，可以使用配置文件来设置这个id是一个不错的选择，如果机器过多配置文件的维护是一个灾难性的事情。</p>
+<p>这里的解决方案是需要一个工作id分配的进程，可以使用自己编写一个简单进程来记录分配id，或者利用Mysql auto_increment机制也可以达到效果。</p>
+<p>工作进程与工作id分配器只是在工作进程启动的时候交互一次，然后工作进程可以自行将分配的id数据落文件，下一次启动直接读取文件里的id使用。</p>
+<p>PS：这个工作机器id的bit段也可以进一步拆分，比如用前5个bit标记进程id，后5个bit标记线程id之类。</p>
+<h4 id="Snowflake-–-序列号"><a href="#Snowflake-–-序列号" class="headerlink" title="Snowflake – 序列号"></a>Snowflake – 序列号</h4><p>序列号就是一系列的自增id（多线程建议使用atomic），为了处理在同一毫秒内需要给多条消息分配id，若同一毫秒把序列号用完了，则“等待至下一毫秒”。</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">waitNextMs</span><span class="params">(<span class="type">uint64_t</span> lastStamp)</span> </span>&#123;</span><br><span class="line">    <span class="type">uint64_t</span> cur = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">        cur = <span class="built_in">generateStamp</span>();</span><br><span class="line">    &#125; <span class="keyword">while</span> (cur &lt;= lastStamp);</span><br><span class="line">    <span class="keyword">return</span> cur;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>总体来说，是一个很高效很方便的GUID产生算法，一个int64_t字段就可以胜任，不像现在主流128bit的GUID算法，即使无法保证严格的id序列性，但是对于特定的业务，比如用做游戏服务器端的GUID产生会很方便。另外，在多线程的环境下，序列号使用atomic可以在代码实现上有效减少锁的密度。</p>
+]]></content>
+      <tags>
+        <tag>Engineering</tag>
       </tags>
   </entry>
   <entry>
@@ -465,76 +539,58 @@
       </tags>
   </entry>
   <entry>
-    <title>Paper accepted by VLDB 2022</title>
-    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
-    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
-]]></content>
-      <tags>
-        <tag>Publication</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>TKDE Reviewer Invitation</title>
-    <url>/2022/05/10/TKDE-Reviewer-Invitation/</url>
-    <content><![CDATA[<p><strong>TKDE</strong>(IEEE Transactions on Knowledge and Data Engineering) Reviewer <a href="https://publons.com/researcher/5190849/zerui-ge/">https://publons.com/researcher/5190849/zerui-ge/</a></p>
-]]></content>
-      <tags>
-        <tag>Publication</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>UUID</title>
-    <url>/2022/05/15/UUID/</url>
-    <content><![CDATA[<h3 id="UUID-特点"><a href="#UUID-特点" class="headerlink" title="UUID 特点"></a>UUID 特点</h3><ul>
-<li><p>经由一定的算法机器生成<br>为了保证UUID的唯一性，规范定义了包括网卡MAC地址、时间戳、名字空间（Namespace）、随机或伪随机数、时序等元素，以及从这些元素生成UUID的算法。UUID的复杂特性在保证了其唯一性的同时，意味着只能由计算机生成。</p>
-</li>
-<li><p>非人工指定，非人工识别<br>UUID是不能人工指定的，除非你冒着UUID重复的风险。UUID的复杂性决定了“一般人“不能直接从一个UUID知道哪个对象和它关联。</p>
-</li>
-<li><p>在特定的范围内重复的可能性极小<br>UUID的生成规范定义的算法主要目的就是要保证其唯一性。但这个唯一性是有限的，只在特定的范围内才能得到保证，这和UUID的类型有关（参见UUID的版本）。</p>
-</li>
-</ul>
-<h3 id="Nil-UUID"><a href="#Nil-UUID" class="headerlink" title="Nil UUID"></a>Nil UUID</h3><p>通常我们不会用到它，它是由全为0的数字组成，如下：<br>00000000-0000-0000-0000-000000000000</p>
-<h3 id="UUID-Version-1：基于时间的UUID"><a href="#UUID-Version-1：基于时间的UUID" class="headerlink" title="UUID Version 1：基于时间的UUID"></a>UUID Version 1：基于时间的UUID</h3><p>基于时间的UUID通过计算当前时间戳、随机数和机器MAC地址得到。由于在算法中使用了MAC地址，这个版本的UUID可以保证在全球范围的唯一性。但与此同时，使用MAC地址会带来安全性问题，这就是这个版本UUID受到批评的地方。如果应用只是在局域网中使用，也可以使用退化的算法，以IP地址来代替MAC地址－－Java的UUID往往是这样实现的（当然也考虑了获取MAC的难度）。</p>
-<h3 id="UUID-Version-2：DCE安全的UUID"><a href="#UUID-Version-2：DCE安全的UUID" class="headerlink" title="UUID Version 2：DCE安全的UUID"></a>UUID Version 2：DCE安全的UUID</h3><p>DCE（Distributed Computing Environment）安全的UUID和基于时间的UUID算法相同，但会把时间戳的前4位置换为POSIX的UID或GID。这个版本的UUID在实际中较少用到。</p>
-<h3 id="UUID-Version-3：基于名字的UUID（MD5）"><a href="#UUID-Version-3：基于名字的UUID（MD5）" class="headerlink" title="UUID Version 3：基于名字的UUID（MD5）"></a>UUID Version 3：基于名字的UUID（MD5）</h3><p>基于名字的UUID通过计算名字和名字空间的MD5散列值得到。这个版本的UUID保证了：相同名字空间中不同名字生成的UUID的唯一性；不同名字空间中的UUID的唯一性；相同名字空间中相同名字的UUID重复生成是相同的。</p>
-<h3 id="UUID-Version-4：随机UUID"><a href="#UUID-Version-4：随机UUID" class="headerlink" title="UUID Version 4：随机UUID"></a>UUID Version 4：随机UUID</h3><p>根据随机数，或者伪随机数生成UUID。这种UUID产生重复的概率是可以计算出来的，但随机的东西就像是买彩票：你指望它发财是不可能的，但狗屎运通常会在不经意中到来。</p>
-<h3 id="UUID-Version-5：基于名字的UUID（SHA1）"><a href="#UUID-Version-5：基于名字的UUID（SHA1）" class="headerlink" title="UUID Version 5：基于名字的UUID（SHA1）"></a>UUID Version 5：基于名字的UUID（SHA1）</h3><p>和版本3的UUID算法类似，只是散列值计算使用SHA1（Secure Hash Algorithm 1）算法。</p>
-<h3 id="UUID-应用"><a href="#UUID-应用" class="headerlink" title="UUID 应用"></a>UUID 应用</h3><p>Version 1&#x2F;2 适合应用于分布式计算环境下，具有高度的唯一性。<br>Version 3&#x2F;5 适合于一定范围内名字唯一，且需要或可能会重复生成UUID的环境下。<br>Version 4 是最简单最方便的，理论碰撞概率非常低。</p>
-<p>通常使用 UUID Version 4，只有在需要特殊性质的时候选择别的：</p>
-<ul>
-<li>可按时间排序（<a href="https://github.com/ulid/spec">ULID 1</a> )</li>
-<li>encode 特殊信息（feature store &#x2F; seaweed id）</li>
-<li>长度&#x2F;编码效率（<a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake.html">Twitter Snowflake 2</a>）</li>
-</ul>
-<p>UUID 一般来标识对象或持久化数据，但以下情况最好不使用UUID：</p>
-<ul>
-<li><p>映射类型的对象。比如只有代码及名称的代码表。</p>
-</li>
-<li><p>人工维护的非系统生成对象。比如系统中的部分基础数据。</p>
-</li>
-<li><p>对于具有名称不可重复的自然特性的对象，最好使用 Version 3&#x2F;5 的 UUID。比如系统中的用户。如果用户的 UUID 是 Version 1 的，如果你不小心删除了再重建用户，你会发现人还是那个人，用户已经不是那个用户了。（虽然标记为删除状态也是一种解决方案，但会带来实现上的复杂性。）</p>
-</li>
-</ul>
-<h3 id="Twitter-Snowflake"><a href="#Twitter-Snowflake" class="headerlink" title="Twitter Snowflake"></a>Twitter Snowflake</h3><p>Twitter-Snowflake 算法产生的背景相当简单，为了满足Twitter每秒上万条消息的请求，每条消息都必须分配一条唯一的id，这些id还需要一些大致的顺序（方便客户端排序），并且在分布式系统中不同机器产生的id必须不同。</p>
-<h4 id="Snowflake算法核心"><a href="#Snowflake算法核心" class="headerlink" title="Snowflake算法核心"></a>Snowflake算法核心</h4><p>把<strong>时间戳</strong>，<strong>工作机器id</strong>，<strong>序列号</strong>组合在一起。</p>
-<p>无用（1bit）+ 时间戳（41bit）+ 工作机器ID（10bit）+ 序列号（12bit）</p>
-<p>除了最高位bit标记为不可用以外，其余三组bit占位均可浮动，看具体的业务需求而定。<strong>默认情况下41bit的时间戳可以支持该算法使用到2082年，10bit的工作机器id可以支持1023台机器，序列号支持1毫秒产生4095个自增序列id</strong>。</p>
-<h4 id="Snowflake-–-时间戳"><a href="#Snowflake-–-时间戳" class="headerlink" title="Snowflake – 时间戳"></a>Snowflake – 时间戳</h4><p>这里时间戳的细度是毫秒级，具体代码如下，建议使用64位linux系统机器，因为有<a href="http://man7.org/linux/man-pages/man7/vdso.7.html">vdso</a>，gettimeofday()在用户态就可以完成操作，减少了进入内核态的损耗。</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">generateStamp</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    timeval tv;</span><br><span class="line">    <span class="built_in">gettimeofday</span>(&amp;tv, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">return</span> (<span class="type">uint64_t</span>)tv.tv_sec * <span class="number">1000</span> + (<span class="type">uint64_t</span>)tv.tv_usec / <span class="number">1000</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+    <title>Varint</title>
+    <url>/2022/05/15/Varint/</url>
+    <content><![CDATA[<h3 id="Varint-编码原理"><a href="#Varint-编码原理" class="headerlink" title="Varint 编码原理"></a>Varint 编码原理</h3><p>除了最后一个字节外，varint 编码中的每个字节都设置了最高有效位 (most significant bit - msb)</p>
+<p>msb 为 1 则表明后面的字节还是属于当前数据的, 如果是 0 那么这是当前数据的最后一个字节数据。</p>
+<p>每个字节的低7位用于以7位为一组存储数字的二进制补码表示，最低有效组在前，或者叫最低有效字节在前。这表明varint编码后数据的字节是按照<strong>小端序</strong>排列的。</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">十进制: 123456</span><br><span class="line">二进制补码: 111 1000100 1000000</span><br><span class="line">Varint 编码: 11000000 11000100 0000111</span><br></pre></td></tr></table></figure>
+<span id="more"></span>
 
-<p>默认情况下有41个bit可以供使用，那么一共有T（2 ^ 41）毫秒供你使用分配，年份 &#x3D; T &#x2F; (3600 * 24 * 365 * 1000) &#x3D; 69.7年。如果你只给时间戳分配39个bit使用，那么根据同样的算法最后年份 &#x3D; 17.4年。</p>
-<h4 id="Snowflake-–-工作机器id"><a href="#Snowflake-–-工作机器id" class="headerlink" title="Snowflake – 工作机器id"></a>Snowflake – 工作机器id</h4><p>严格意义上来说这个bit段的使用可以是进程级，<strong>机器级的话你可以使用MAC地址来唯一标示工作机器</strong>，<strong>工作进程级可以使用IP+Path来区分工作进程</strong>。如果工作机器比较少，可以使用配置文件来设置这个id是一个不错的选择，如果机器过多配置文件的维护是一个灾难性的事情。</p>
-<p>这里的解决方案是需要一个工作id分配的进程，可以使用自己编写一个简单进程来记录分配id，或者利用Mysql auto_increment机制也可以达到效果。</p>
-<p>工作进程与工作id分配器只是在工作进程启动的时候交互一次，然后工作进程可以自行将分配的id数据落文件，下一次启动直接读取文件里的id使用。</p>
-<p>PS：这个工作机器id的bit段也可以进一步拆分，比如用前5个bit标记进程id，后5个bit标记线程id之类。</p>
-<h4 id="Snowflake-–-序列号"><a href="#Snowflake-–-序列号" class="headerlink" title="Snowflake – 序列号"></a>Snowflake – 序列号</h4><p>序列号就是一系列的自增id（多线程建议使用atomic），为了处理在同一毫秒内需要给多条消息分配id，若同一毫秒把序列号用完了，则“等待至下一毫秒”。</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">waitNextMs</span><span class="params">(<span class="type">uint64_t</span> lastStamp)</span> </span>&#123;</span><br><span class="line">    <span class="type">uint64_t</span> cur = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">        cur = <span class="built_in">generateStamp</span>();</span><br><span class="line">    &#125; <span class="keyword">while</span> (cur &lt;= lastStamp);</span><br><span class="line">    <span class="keyword">return</span> cur;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="Golang-实现"><a href="#Golang-实现" class="headerlink" title="Golang 实现"></a>Golang 实现</h3><figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">const</span> maxVarintBytes = <span class="number">10</span> <span class="comment">// maximum length of a varint</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 返回Varint类型编码后的字节流</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">EncodeVarint</span><span class="params">(x <span class="type">uint64</span>)</span></span> []<span class="type">byte</span> &#123;</span><br><span class="line">    <span class="keyword">var</span> buf [maxVarintBytes]<span class="type">byte</span></span><br><span class="line">    <span class="keyword">var</span> n <span class="type">int</span></span><br><span class="line">    <span class="comment">// 下面的编码规则需要详细理解:</span></span><br><span class="line">    <span class="comment">// 1.每个字节的最高位是保留位, 如果是1说明后面的字节还是属于当前数据的,如果是0,那么这是当前数据的最后一个字节数据</span></span><br><span class="line">    <span class="comment">//  看下面代码,因为一个字节最高位是保留位,那么这个字节中只有下面7bits可以保存数据</span></span><br><span class="line">    <span class="comment">//  所以,如果x&gt;127,那么说明这个数据还需大于一个字节保存,所以当前字节最高位是1,看下面的buf[n] = 0x80 | ...</span></span><br><span class="line">    <span class="comment">//  0x80说明将这个字节最高位置为1, 后面的x&amp;0x7F是取得x的低7位数据, 那么0x80 | uint8(x&amp;0x7F)整体的意思就是</span></span><br><span class="line">    <span class="comment">//  这个字节最高位是1表示这不是最后一个字节,后面7为是正式数据! 注意操作下一个字节之前需要将x&gt;&gt;=7</span></span><br><span class="line">    <span class="comment">// 2.看如果x&lt;=127那么说明x现在使用7bits可以表示了,那么最高位没有必要是1,直接是0就ok!所以最后直接是buf[n] = uint8(x)</span></span><br><span class="line">    <span class="comment">//</span></span><br><span class="line">    <span class="comment">// 如果数据大于一个字节(127是一个字节最大数据), 那么继续, 即: 需要在最高位加上1</span></span><br><span class="line">    <span class="keyword">for</span> n = <span class="number">0</span>; x &gt; <span class="number">127</span>; n++ &#123;</span><br><span class="line">        <span class="comment">// x&amp;0x7F表示取出下7bit数据, 0x80表示在最高位加上1</span></span><br><span class="line">        buf[n] = <span class="number">0x80</span> | <span class="type">uint8</span>(x&amp;<span class="number">0x7F</span>)</span><br><span class="line">        <span class="comment">// 右移7位, 继续后面的数据处理</span></span><br><span class="line">        x &gt;&gt;= <span class="number">7</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 最后一个字节数据</span></span><br><span class="line">    buf[n] = <span class="type">uint8</span>(x)</span><br><span class="line">    n++</span><br><span class="line">    <span class="keyword">return</span> buf[<span class="number">0</span>:n]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<p>总体来说，是一个很高效很方便的GUID产生算法，一个int64_t字段就可以胜任，不像现在主流128bit的GUID算法，即使无法保证严格的id序列性，但是对于特定的业务，比如用做游戏服务器端的GUID产生会很方便。另外，在多线程的环境下，序列号使用atomic可以在代码实现上有效减少锁的密度。</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">DecodeVarint</span><span class="params">(buf []<span class="type">byte</span>)</span></span> (x <span class="type">uint64</span>, n <span class="type">int</span>) &#123;</span><br><span class="line">    <span class="keyword">for</span> shift := <span class="type">uint</span>(<span class="number">0</span>); shift &lt; <span class="number">64</span>; shift += <span class="number">7</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> n &gt;= <span class="built_in">len</span>(buf) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="number">0</span>, <span class="number">0</span></span><br><span class="line">        &#125;</span><br><span class="line">        b := <span class="type">uint64</span>(buf[n])</span><br><span class="line">        n++</span><br><span class="line">    <span class="comment">// 下面这个分成三步走:</span></span><br><span class="line">        <span class="comment">// 1: b &amp; 0x7F 获取下7bits有效数据</span></span><br><span class="line">        <span class="comment">// 2: (b &amp; 0x7F) &lt;&lt; shift 由于是小端序, 所以每次处理一个Byte数据, 都需要向高位移动7bits</span></span><br><span class="line">        <span class="comment">// 3: 将数据x和当前的这个字节数据 | 在一起</span></span><br><span class="line">        x |= (b &amp; <span class="number">0x7F</span>) &lt;&lt; shift</span><br><span class="line">        <span class="keyword">if</span> (b &amp; <span class="number">0x80</span>) == <span class="number">0</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> x, n</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// The number is too large to represent in a 64-bit value.</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>, <span class="number">0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 ]]></content>
       <tags>
         <tag>Engineering</tag>
-        <tag>UUID</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>WiscKey: Separating Keys from Values in SSD-conscious Storage</title>
+    <url>/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/</url>
+    <content><![CDATA[<h3 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h3><p>这篇 Paper 将的都是如何解决 LSM-Tree 的写放大的问题。Wisckey的基本思路其实很简单，使用的方法就是将Key和Value分开保存的方式，对于读取Value时造成的随机读写问题，Wisckey则认为这个在SSD上的问题能得到缓解，也使用了预取，并行读等的一些优化方式。在SOSP‘17上面的 PebblesDB 则对 LSM-Tree 的结构进行了比较好的改进，个人认为这个是一种更加好的方式。WiscKey的设计目标是为随机性能比较好的SSD优化的，因为它的设计会导致比较多的随机读，它在测试数据中实现了,</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">We demonstrate the advantages of WiscKey with both microbenchmarks and YCSB workloads. Microbenchmark results show that WiscKey is 2.5×–111× faster than LevelDB for loading a database and 1.6×–14× faster for random lookups. WiscKey is faster than both LevelDB and RocksDB in all six YCSB workloads.</span><br></pre></td></tr></table></figure>
+
+<span id="more"></span>
+
+<h3 id="Key-Value-Separation"><a href="#Key-Value-Separation" class="headerlink" title="Key-Value Separation"></a>Key-Value Separation</h3><p>WiscKey的核心思路基本就是将Key-Value分开保存了。在LSM-Tree中，每次merge的操作会造成写放大的问题，但如果将里面的Value拿出来分开保存，直接保存在LSM-Tree的数据就减小很多，因为一般情况下，Key的尺寸远小于Value的尺寸。直接在LSM-Tree就只需要保存Value的地址信息。这个思路和bitcask的思路很相似。不同点：bitcask的索引结构一般为hash table，当然使用skip list之类的数据结构也完全是可以的；另外一个不同点就是bitcask的索引都是全部保存在内存里面的，也会定期的持久化到磁盘上面。</p>
+<p><img src="/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_1.png" alt="Wisckey Data Layout on SSD"></p>
+<p>如上图所示，Key Values-Address的pair保存在LSM-Tree里面，而Value本身就保存在类似Log的结构里面。由于Key Value之间很大的尺寸差异，这样LSM-Tree里面实际保存的数据就会大大减小，也就能很大程度上解决写入放大的问题:</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">For example, assuming a 16-B key, a 1KB value, and a write amplification of 10 for keys (in the LSM-tree) and 1 for values, the effective write amplification of WiscKey is only (10 × 16 + 1024) / (16 + 1024) = 1.14. In addition to improving the write performance of applications, the reduced write amplification also improves an SSD’s lifetime by requiring fewer erase cycles.</span><br></pre></td></tr></table></figure>
+
+<h3 id="要解决的问题"><a href="#要解决的问题" class="headerlink" title="要解决的问题"></a>要解决的问题</h3><ul>
+<li><p>Parallel Range Query，这是WiscKey要处理的一个最主要的问题，范围查询对于LevelDB之类的将Key和Value放在一起的设计来说，这个做起来就很简单。对于WiscKey来说，这就因为着会产生大量的随机读操作，当然就会影响到性能。这里WiscKey的拒绝办法是利用SSD设备的并行IO的能力，对于范围查询，WiscKey对Next() or Prev() 的请求，会分析访问的模式，一旦一个发现是一个连续的顺序访问，WiscKey就会读取画面的若干的Key，然后并发的使用这些Key信息去取回Value。</p>
+</li>
+<li><p>Garbage Collection，一般的LSM-Tree的设计垃圾回收是在compaction的时候进行的，对于WiscKey来说，这里要处理的问题是，直接扫描Value Log(vLog)处理的方式是不好的，会带来太大的overhead。未来解决这个问题，这里处理的方式是对WiscKey的Data Layout进行少许的修改，在vLog里面不仅仅是保存了数据，而是以这样的方式保存<code>(key size, value size, key, value) </code>。WiscKey的垃圾回收的一个目标就是将有效的Value保存在一个连续的范围之内。如下面的图所示，在vLog里面，有一个head代表了写入的位置，一个tail代表了垃圾回收要处理的开始的位置。垃圾回收的是，WsicKey先读区几个MB的数据，检查里面合法的数据，然后将这些数据写入到head。</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">To avoid losing any data if a crash happens during garbage collection, WiscKey has to make sure that the newly appended valid values and the new tail are persistent on the device before actually freeing space.</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>Crash Consistency，即使这里Key Value是分开保存的，WiscKey依然可以提供Crash Consistency。在系统崩溃的时候可能出现只有一部分的数据被append的vLog的后面，也可以保存如果Value X在carsh中丢失了，后面的数据也都会丢失，不会出现随机的一些bytes or 不是Value前缀的数据被添加进去。当查询是，WiscKey如果发现一个Key在LSM-Tree中发现不了，就会认为这个数据在Carsh中丢失了。如果能在LSM-Tree中被发现，则会检查数据的合法性，如果检查不通过，就会认为这个Value在Crash中被丢失了，</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">In this case, WiscKey first verifies whether the value address retrieved from the LSM-tree falls within the current valid range of the vLog, and then whether the value found corresponds to the queried key. If the verifications fail, WiscKey assumes that the value was lost during a system crash, deletes the key from the LSM- tree, and informs the user that the key was not found.</span><br></pre></td></tr></table></figure></li>
+</ul>
+<p><img src="/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_2.png" alt="Wisckey New Data Layout for GC"></p>
+<h3 id="优化"><a href="#优化" class="headerlink" title="优化"></a>优化</h3><ul>
+<li><p>Value-Log Write Buffer，这个优化是一个显而易见的优化，资额vLog的时候最好就是积攒了一些数据之后在写入到文件里面。添加了这个write buffer之后，要添加的一个处理就是查找的时候要先查找这个buffer里面的数据，因为这里的数据还是在内存里面的。</p>
+</li>
+<li><p>Optimizing the LSM-tree Log，这也是一个很好的优化，前面提到的在vLog里面的数据是既有Value也有Key的，这样的话就不用在额外使用Log了。为了加快Crash之后的恢复的速度，WiscKey周期性的在vLog的head里面添加一个<code>&lt;‘‘head’’, head-vLog-offset&gt;</code>，这个就类似于一个checkpoint的机制，</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">WiscKey records the head of the vLog periodically in the LSM-tree, as a key-value pair &lt;‘‘head’’, head-vLog-offset&gt;. When a database is opened, WiscKey starts the vLog scan from the most recent head position stored in the LSM-tree, and continues scanning until the end of the vLog. Since the head is stored in the LSM-tree, and the LSM-tree inherently guarantees that keys inserted into the LSM-tree will be recovered in the inserted order, this optimization is crash consistent.</span><br></pre></td></tr></table></figure></li>
+</ul>
+<h3 id="评估"><a href="#评估" class="headerlink" title="评估"></a>评估</h3><p>基本的性能数据(详细的数据参看论文):</p>
+<p><img src="/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/wisckey_3.png" alt="Wisckey Performance"></p>
+<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>这个在一些随机性能非常好的SSD上面是一种非常有效的办法。对于现在的很多NVMe的SSD来说，4K的随机性能以及是几十万的基本了。这个办法的优势在于它的简单，而且很有效。另外，感觉这里的写入和垃圾回收还是可以有优化的空间的。</p>
+]]></content>
+      <tags>
+        <tag>Paper</tag>
+        <tag>LSM</tag>
       </tags>
   </entry>
   <entry>
@@ -548,23 +604,6 @@
 ]]></content>
       <tags>
         <tag>Golang</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Varint</title>
-    <url>/2022/05/15/Varint/</url>
-    <content><![CDATA[<h3 id="Varint-编码原理"><a href="#Varint-编码原理" class="headerlink" title="Varint 编码原理"></a>Varint 编码原理</h3><p>除了最后一个字节外，varint 编码中的每个字节都设置了最高有效位 (most significant bit - msb)</p>
-<p>msb 为 1 则表明后面的字节还是属于当前数据的, 如果是 0 那么这是当前数据的最后一个字节数据。</p>
-<p>每个字节的低7位用于以7位为一组存储数字的二进制补码表示，最低有效组在前，或者叫最低有效字节在前。这表明varint编码后数据的字节是按照<strong>小端序</strong>排列的。</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">十进制: 123456</span><br><span class="line">二进制补码: 111 1000100 1000000</span><br><span class="line">Varint 编码: 11000000 11000100 0000111</span><br></pre></td></tr></table></figure>
-
-<h3 id="Golang-实现"><a href="#Golang-实现" class="headerlink" title="Golang 实现"></a>Golang 实现</h3><figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">const</span> maxVarintBytes = <span class="number">10</span> <span class="comment">// maximum length of a varint</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 返回Varint类型编码后的字节流</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">EncodeVarint</span><span class="params">(x <span class="type">uint64</span>)</span></span> []<span class="type">byte</span> &#123;</span><br><span class="line">    <span class="keyword">var</span> buf [maxVarintBytes]<span class="type">byte</span></span><br><span class="line">    <span class="keyword">var</span> n <span class="type">int</span></span><br><span class="line">    <span class="comment">// 下面的编码规则需要详细理解:</span></span><br><span class="line">    <span class="comment">// 1.每个字节的最高位是保留位, 如果是1说明后面的字节还是属于当前数据的,如果是0,那么这是当前数据的最后一个字节数据</span></span><br><span class="line">    <span class="comment">//  看下面代码,因为一个字节最高位是保留位,那么这个字节中只有下面7bits可以保存数据</span></span><br><span class="line">    <span class="comment">//  所以,如果x&gt;127,那么说明这个数据还需大于一个字节保存,所以当前字节最高位是1,看下面的buf[n] = 0x80 | ...</span></span><br><span class="line">    <span class="comment">//  0x80说明将这个字节最高位置为1, 后面的x&amp;0x7F是取得x的低7位数据, 那么0x80 | uint8(x&amp;0x7F)整体的意思就是</span></span><br><span class="line">    <span class="comment">//  这个字节最高位是1表示这不是最后一个字节,后面7为是正式数据! 注意操作下一个字节之前需要将x&gt;&gt;=7</span></span><br><span class="line">    <span class="comment">// 2.看如果x&lt;=127那么说明x现在使用7bits可以表示了,那么最高位没有必要是1,直接是0就ok!所以最后直接是buf[n] = uint8(x)</span></span><br><span class="line">    <span class="comment">//</span></span><br><span class="line">    <span class="comment">// 如果数据大于一个字节(127是一个字节最大数据), 那么继续, 即: 需要在最高位加上1</span></span><br><span class="line">    <span class="keyword">for</span> n = <span class="number">0</span>; x &gt; <span class="number">127</span>; n++ &#123;</span><br><span class="line">        <span class="comment">// x&amp;0x7F表示取出下7bit数据, 0x80表示在最高位加上1</span></span><br><span class="line">        buf[n] = <span class="number">0x80</span> | <span class="type">uint8</span>(x&amp;<span class="number">0x7F</span>)</span><br><span class="line">        <span class="comment">// 右移7位, 继续后面的数据处理</span></span><br><span class="line">        x &gt;&gt;= <span class="number">7</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 最后一个字节数据</span></span><br><span class="line">    buf[n] = <span class="type">uint8</span>(x)</span><br><span class="line">    n++</span><br><span class="line">    <span class="keyword">return</span> buf[<span class="number">0</span>:n]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">DecodeVarint</span><span class="params">(buf []<span class="type">byte</span>)</span></span> (x <span class="type">uint64</span>, n <span class="type">int</span>) &#123;</span><br><span class="line">    <span class="keyword">for</span> shift := <span class="type">uint</span>(<span class="number">0</span>); shift &lt; <span class="number">64</span>; shift += <span class="number">7</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> n &gt;= <span class="built_in">len</span>(buf) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="number">0</span>, <span class="number">0</span></span><br><span class="line">        &#125;</span><br><span class="line">        b := <span class="type">uint64</span>(buf[n])</span><br><span class="line">        n++</span><br><span class="line">    <span class="comment">// 下面这个分成三步走:</span></span><br><span class="line">        <span class="comment">// 1: b &amp; 0x7F 获取下7bits有效数据</span></span><br><span class="line">        <span class="comment">// 2: (b &amp; 0x7F) &lt;&lt; shift 由于是小端序, 所以每次处理一个Byte数据, 都需要向高位移动7bits</span></span><br><span class="line">        <span class="comment">// 3: 将数据x和当前的这个字节数据 | 在一起</span></span><br><span class="line">        x |= (b &amp; <span class="number">0x7F</span>) &lt;&lt; shift</span><br><span class="line">        <span class="keyword">if</span> (b &amp; <span class="number">0x80</span>) == <span class="number">0</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> x, n</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// The number is too large to represent in a 64-bit value.</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>, <span class="number">0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-]]></content>
-      <tags>
-        <tag>Engineering</tag>
-        <tag>varint</tag>
       </tags>
   </entry>
   <entry>
