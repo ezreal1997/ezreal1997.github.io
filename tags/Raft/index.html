@@ -20,21 +20,15 @@
     var CONFIG = {"hostname":"example.com","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":true},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
   </script>
 
-  <meta name="description" content="NoSQL+ACID+SQL Layer &#x3D; NewSQL在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型 MVCC+OCC&#x3D;SSI基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别 NewSQL 主流系统原生实现  CockroachDB YugaByteDB  NoSQL+ACID+SQL  TiDB Tra">
-<meta property="og:type" content="article">
-<meta property="og:title" content="NewSQL 主流实现">
-<meta property="og:url" content="http://example.com/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/index.html">
+  <meta property="og:type" content="website">
+<meta property="og:title" content="ezreal&#39;s blog">
+<meta property="og:url" content="http://example.com/tags/Raft/index.html">
 <meta property="og:site_name" content="ezreal&#39;s blog">
-<meta property="og:description" content="NoSQL+ACID+SQL Layer &#x3D; NewSQL在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型 MVCC+OCC&#x3D;SSI基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别 NewSQL 主流系统原生实现  CockroachDB YugaByteDB  NoSQL+ACID+SQL  TiDB Tra">
 <meta property="og:locale" content="en_US">
-<meta property="article:published_time" content="2022-05-12T14:43:24.000Z">
-<meta property="article:modified_time" content="2022-05-12T15:20:22.051Z">
 <meta property="article:author" content="ezreal">
-<meta property="article:tag" content="OCC">
-<meta property="article:tag" content="NewSQL">
 <meta name="twitter:card" content="summary">
 
-<link rel="canonical" href="http://example.com/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/">
+<link rel="canonical" href="http://example.com/tags/Raft/">
 
 
 <script id="page-configurations">
@@ -42,12 +36,12 @@
   CONFIG.page = {
     sidebar: "",
     isHome : false,
-    isPost : true,
+    isPost : false,
     lang   : 'en'
   };
 </script>
 
-  <title>NewSQL 主流实现 | ezreal's blog</title>
+  <title>Tag: Raft | ezreal's blog</title>
   
 
 
@@ -183,153 +177,71 @@
         <div class="content-wrap">
           
 
-          <div class="content post posts-expand">
+          <div class="content tag">
             
 
-    
   
   
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="ezreal">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="ezreal's blog">
-    </span>
-      <header class="post-header">
-        <h1 class="post-title" itemprop="name headline">
-          NewSQL 主流实现
-        </h1>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">Posted on</span>
-              
-
-              <time title="Created: 2022-05-12 22:43:24 / Modified: 23:20:22" itemprop="dateCreated datePublished" datetime="2022-05-12T22:43:24+08:00">2022-05-12</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
+  
+  <div class="post-block">
+    <div class="posts-collapse">
+      <div class="collection-title">
+        <h2 class="collection-header">Raft
+          <small>Tag</small>
+        </h2>
+      </div>
 
       
-        <h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
-<h3 id="MVCC-OCC-x3D-SSI"><a href="#MVCC-OCC-x3D-SSI" class="headerlink" title="MVCC+OCC&#x3D;SSI"></a>MVCC+OCC&#x3D;SSI</h3><p>基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别</p>
-<h3 id="NewSQL-主流系统"><a href="#NewSQL-主流系统" class="headerlink" title="NewSQL 主流系统"></a>NewSQL 主流系统</h3><p>原生实现</p>
-<ul>
-<li>CockroachDB</li>
-<li>YugaByteDB</li>
-</ul>
-<p>NoSQL+ACID+SQL</p>
-<ul>
-<li>TiDB</li>
-<li>Trafodion</li>
-</ul>
-<span id="more"></span>
-
-<p>事务的并发控制是为了实现事务的调度，一个正确、高效的事务调度应满足如下属性：</p>
-<ul>
-<li>可串行化</li>
-</ul>
-<p>多个并发事务的调度S与一个串行化的调度产生相同的结果，则称这个调度S是可串行化的。在数据库实现中，一般使用冲突可串行化技术。</p>
-<ul>
-<li>可恢复性</li>
-</ul>
-<p>已经提交的事务没有读过被终止的事务写过的数据，防止脏读异常。</p>
-<ul>
-<li>避免级联终止</li>
-</ul>
-<p>避免由于事务T1的终止而导致事务T2的终止。</p>
-<ul>
-<li>严格性</li>
-</ul>
-<p>先发生写操作的事务的提交或终止应先于其它冲突事务的提交或终止。</p>
-<table>
-<thead>
-<tr>
-<th>生产级NewSQL数据库</th>
-<th>并发控制</th>
-<th>隔离级别</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Spanner</td>
-<td>MVCC+SS2PL</td>
-<td>Linearizability</td>
-</tr>
-<tr>
-<td>Oceanbase 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>RC</td>
-</tr>
-<tr>
-<td>CockroachDB 1.0</td>
-<td>MVCC+T&#x2F;O</td>
-<td>SSI</td>
-</tr>
-<tr>
-<td>TiDB 1.0</td>
-<td>MVCC+SS2PL</td>
-<td>SI</td>
-</tr>
-<tr>
-<td>FoundationDB 5.1</td>
-<td>MVCC+OCC</td>
-<td>SSI</td>
-</tr>
-</tbody></table>
-<p>FoundationDB 的 OCC 实现也有一些限制，比如官方文档对 KV 和事务的大小及时长做出了如下限制：</p>
-<ul>
-<li>key不超过10K；value不超过100K；事务不超过10M（包括所有读、写涉及的KV）</li>
-<li>仅支持运行时间不超过5s的读写事务</li>
-</ul>
-
+    <div class="collection-year">
+      <span class="collection-header">2022</span>
     </div>
 
-    
-    
-    
+  <article itemscope itemtype="http://schema.org/Article">
+    <header class="post-header">
 
-      <footer class="post-footer">
-          <div class="post-tags">
-              <a href="/tags/OCC/" rel="tag"># OCC</a>
-              <a href="/tags/NewSQL/" rel="tag"># NewSQL</a>
-          </div>
+      <div class="post-meta">
+        <time itemprop="dateCreated"
+              datetime="2022-05-15T21:02:26+08:00"
+              content="2022-05-15">
+          05-15
+        </time>
+      </div>
 
-        
+      <div class="post-title">
+          <a class="post-title-link" href="/2022/05/15/Raft-Quiz/" itemprop="url">
+            <span itemprop="name">Raft Quiz</span>
+          </a>
+      </div>
 
-
-        
-    <div class="post-nav">
-      <div class="post-nav-item">
-    <a href="/2022/05/12/MongoDB-Primary%E9%80%89%E4%B8%BE/" rel="prev" title="MongoDB Primary选举">
-      <i class="fa fa-chevron-left"></i> MongoDB Primary选举
-    </a></div>
-      <div class="post-nav-item">
-    <a href="/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/" rel="next" title="OCC 当前研究">
-      OCC 当前研究 <i class="fa fa-chevron-right"></i>
-    </a></div>
-    </div>
-      </footer>
-    
+    </header>
   </article>
+
+  <article itemscope itemtype="http://schema.org/Article">
+    <header class="post-header">
+
+      <div class="post-meta">
+        <time itemprop="dateCreated"
+              datetime="2022-05-15T20:59:50+08:00"
+              content="2022-05-15">
+          05-15
+        </time>
+      </div>
+
+      <div class="post-title">
+          <a class="post-title-link" href="/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/" itemprop="url">
+            <span itemprop="name">In Search of an Understandable Consensus Algorithm (Extended Version)</span>
+          </a>
+      </div>
+
+    </header>
+  </article>
+
+    </div>
+  </div>
   
   
+  
+
   
 
 
@@ -382,7 +294,6 @@
 
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
-          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL"><span class="nav-number">1.</span> <span class="nav-text">NoSQL+ACID+SQL Layer &#x3D; NewSQL</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#MVCC-OCC-x3D-SSI"><span class="nav-number">2.</span> <span class="nav-text">MVCC+OCC&#x3D;SSI</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#NewSQL-%E4%B8%BB%E6%B5%81%E7%B3%BB%E7%BB%9F"><span class="nav-number">3.</span> <span class="nav-text">NewSQL 主流系统</span></a></li></ol></div>
       </div>
       <!--/noindex-->
 
