@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.1.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":true},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="概述在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage">
+<meta property="og:url" content="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/index.html">
+<meta property="og:site_name" content="ezreal&#39;s blog">
+<meta property="og:description" content="概述在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png">
+<meta property="og:image" content="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png">
+<meta property="og:image" content="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png">
+<meta property="og:image" content="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png">
+<meta property="og:image" content="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png">
+<meta property="article:published_time" content="2022-05-22T12:28:41.000Z">
+<meta property="article:modified_time" content="2022-05-22T13:56:47.493Z">
+<meta property="article:author" content="ezreal">
+<meta property="article:tag" content="Cloud Native">
+<meta property="article:tag" content="Disaggregation">
+<meta property="article:tag" content="Postgres">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png">
+
+<link rel="canonical" href="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage | ezreal's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">ezreal's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>Search
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="Searching..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="ezreal">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ezreal's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          [Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-05-22 20:28:41 / Modified: 21:56:47" itemprop="dateCreated datePublished" datetime="2022-05-22T20:28:41+08:00">2022-05-22</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。</p>
+<span id="more"></span>
+
+<h3 id="AlloyDB-架构"><a href="#AlloyDB-架构" class="headerlink" title="AlloyDB 架构"></a>AlloyDB 架构</h3><p>AlloyDB 存储层是一个分布式系统，由三个主要部分组成：</p>
+<ul>
+<li>一种低延迟的 regional log storage service，用于高速的 WAL 写入</li>
+<li>负责处理 WAL 并生成 “Materialized(物化)” 数据库页面的 log processing service (LPS)</li>
+<li>负责对数据进行容错、分片的 regional block storage，在区域存储发生故障的情况下也能保证持久性</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png" alt="Overview of PostgreSQL as integrated with the storage service."></p>
+<h4 id="数据流程"><a href="#数据流程" class="headerlink" title="数据流程"></a>数据流程</h4><ul>
+<li>Primary Instance 持久化 WAL ，将数据库修改操作（INSERT&#x2F;DELETE&#x2F;UPDATE）传送到 log storage。随后，LPS 不断重放这些 WAL 的修改操作，并将最新的数据库页面物化到 block storage。</li>
+<li>为了使 Replica Instances 的本地缓存保持最新，AlloyDB 还将 WAL 记录从 Primary Instance 流式传输到 Replica Instances，以通知它们最新的更改。</li>
+</ul>
+<h4 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h4><ul>
+<li>Full compute&#x2F;storage disaggregation<br>LPS 可以根据工作负载进行横向扩展，并在需要时透明地添加更多计算资源来处理日志以避免热点</li>
+<li>Storage-layer replication<br>跨多个区域同步复制所有 Data Block</li>
+<li>Efficient IO paths &#x2F; no full-page writes<br>对于更新操作，计算层仅将 WAL 传递给存储层，存储层不断重放 WAL。在这种设计中，数据库层不需要 Checkpoint，也不需要通过将完整的 Data Block发送到存储层来避免 torn pages problem</li>
+<li>Low-latency WAL writing</li>
+<li>Fast creation of read replica instances</li>
+<li>Fast restart recovery</li>
+<li>Storage-layer backups</li>
+</ul>
+<h3 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h3><h4 id="写入请求"><a href="#写入请求" class="headerlink" title="写入请求"></a>写入请求</h4><p>由客户端向 Primary Instance 发起，在经过 DB 层解析后，变为一组 WAL 发到存储层。在 WAL 同步写入成功后，事务提交成功返回。之后，LPS 会将日志异步的物化为 Data Block。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png" alt="Write Process"></p>
+<h4 id="读取请求"><a href="#读取请求" class="headerlink" title="读取请求"></a>读取请求</h4><ul>
+<li>由客户端向任何 Instance 发起，在 DB 层解析后，如果命中该 DB 层中的 Buffer Cache，则直接返回；否则去更大的、类似二级缓存的 Ultra-fast Cache 中去找，如命中，则仍可不访问存储层。</li>
+<li>如 Ultra-fast Cache 中仍然缺少所需 block，则会带上 block id 和 LSN，向存储层发送 block 读取请求，<strong>这里的 Ultra-fast Cache 会不会是 NVM 之类的存储介质？</strong></li>
+<li>LSN 用于等待 LPS apply 进度，以保证一致性视图。</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png" alt="Read Process"></p>
+<h3 id="存储层弹性伸缩"><a href="#存储层弹性伸缩" class="headerlink" title="存储层弹性伸缩"></a>存储层弹性伸缩</h3><p>Data Block 按组划分到不同的 Shard 中（如一个 Block 是 8KB，一个 Shard 是 10GB，那么一个 Shard 就包含 1310720 个 Block）。每个 Shard 对应一个 LPS，同时 Shard 和 LPS 的映射关系可以会根据 LPS 的伸缩动态变化。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png" alt="LPS Elasticity"></p>
+<h3 id="存储层-Replication-和-Recovery"><a href="#存储层-Replication-和-Recovery" class="headerlink" title="存储层 Replication 和 Recovery"></a>存储层 Replication 和 Recovery</h3><p>AlloyDB 的目标是提供数据持久性和高系统可用性，即使在区域性故障的情况下（例如，在数据中心断电或火灾的情况下）也是如此。为此，每个 AlloyDB 实例的存储层分布在三个 Zone 中。每个 Zone 都有一个完整的数据库状态副本，它通过应用来自 log storage 的 WAL 来不断更新 Data Block。<br><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png" alt="Replication"></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Cloud-Native/" rel="tag"># Cloud Native</a>
+              <a href="/tags/Disaggregation/" rel="tag"># Disaggregation</a>
+              <a href="/tags/Postgres/" rel="tag"># Postgres</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/" rel="prev" title="HotRing: A Hotspot-Aware In-Memory Key-Value Store">
+      <i class="fa fa-chevron-left"></i> HotRing: A Hotspot-Aware In-Memory Key-Value Store
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A6%82%E8%BF%B0"><span class="nav-number">1.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#AlloyDB-%E6%9E%B6%E6%9E%84"><span class="nav-number">2.</span> <span class="nav-text">AlloyDB 架构</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E6%B5%81%E7%A8%8B"><span class="nav-number">2.1.</span> <span class="nav-text">数据流程</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%BC%98%E5%8A%BF"><span class="nav-number">2.2.</span> <span class="nav-text">优势</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%BB%E5%86%99%E6%B5%81%E7%A8%8B"><span class="nav-number">3.</span> <span class="nav-text">读写流程</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%86%99%E5%85%A5%E8%AF%B7%E6%B1%82"><span class="nav-number">3.1.</span> <span class="nav-text">写入请求</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%AF%BB%E5%8F%96%E8%AF%B7%E6%B1%82"><span class="nav-number">3.2.</span> <span class="nav-text">读取请求</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AD%98%E5%82%A8%E5%B1%82%E5%BC%B9%E6%80%A7%E4%BC%B8%E7%BC%A9"><span class="nav-number">4.</span> <span class="nav-text">存储层弹性伸缩</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AD%98%E5%82%A8%E5%B1%82-Replication-%E5%92%8C-Recovery"><span class="nav-number">5.</span> <span class="nav-text">存储层 Replication 和 Recovery</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">ezreal</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">17</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">ezreal</span>
+</div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
