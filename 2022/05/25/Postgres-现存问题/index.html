@@ -20,24 +20,20 @@
     var CONFIG = {"hostname":"example.com","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":true},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
   </script>
 
-  <meta name="description" content="Raft特性 强领导者：和其他共识算法相比，Raft 使用一种更强的领导能力形式。比如，日志条目只从领导者发送给其他的服务器。这种方式简化了对复制日志的管理并且使得 Raft 算法更加易于理解。 领导选举：Raft 算法使用一个随机计时器来选举领导者。这种方式只是在任何共识算法都必须实现的心跳机制上增加了一点机制。在解决冲突的时候会更加简单快捷。 关系调整：Raft 使用一种共同一致的方法来处理集">
+  <meta name="description" content="原文见 10 Things I Hate About PostgreSQL  灾难性的 XID wraproundXID 是一个32位无符号整数，也就是 XID 的范围是 0到2^32-1；那么超过了 2^32-1的事务怎么办呢？其实 XID 是一个环，超过了 2^32-1 之后又会从头开始分配。需要通过 vacuum 机制来不断的 frozen 元组来回收 XID。123456789101112">
 <meta property="og:type" content="article">
-<meta property="og:title" content="In Search of an Understandable Consensus Algorithm (Extended Version)">
-<meta property="og:url" content="http://example.com/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/index.html">
+<meta property="og:title" content="Postgres 现存问题">
+<meta property="og:url" content="http://example.com/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/index.html">
 <meta property="og:site_name" content="ezreal&#39;s blog">
-<meta property="og:description" content="Raft特性 强领导者：和其他共识算法相比，Raft 使用一种更强的领导能力形式。比如，日志条目只从领导者发送给其他的服务器。这种方式简化了对复制日志的管理并且使得 Raft 算法更加易于理解。 领导选举：Raft 算法使用一个随机计时器来选举领导者。这种方式只是在任何共识算法都必须实现的心跳机制上增加了一点机制。在解决冲突的时候会更加简单快捷。 关系调整：Raft 使用一种共同一致的方法来处理集">
+<meta property="og:description" content="原文见 10 Things I Hate About PostgreSQL  灾难性的 XID wraproundXID 是一个32位无符号整数，也就是 XID 的范围是 0到2^32-1；那么超过了 2^32-1的事务怎么办呢？其实 XID 是一个环，超过了 2^32-1 之后又会从头开始分配。需要通过 vacuum 机制来不断的 frozen 元组来回收 XID。123456789101112">
 <meta property="og:locale" content="en_US">
-<meta property="og:image" content="http://example.com/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/raft_ele.png">
-<meta property="og:image" content="http://example.com/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/raft_fn.png">
-<meta property="article:published_time" content="2022-05-15T12:59:50.000Z">
-<meta property="article:modified_time" content="2022-05-15T13:01:52.781Z">
+<meta property="article:published_time" content="2022-05-25T14:57:31.000Z">
+<meta property="article:modified_time" content="2022-05-29T05:06:16.725Z">
 <meta property="article:author" content="ezreal">
-<meta property="article:tag" content="Paper">
-<meta property="article:tag" content="Raft">
+<meta property="article:tag" content="Postgres">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="http://example.com/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/raft_ele.png">
 
-<link rel="canonical" href="http://example.com/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/">
+<link rel="canonical" href="http://example.com/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/">
 
 
 <script id="page-configurations">
@@ -50,7 +46,7 @@
   };
 </script>
 
-  <title>In Search of an Understandable Consensus Algorithm (Extended Version) | ezreal's blog</title>
+  <title>Postgres 现存问题 | ezreal's blog</title>
   
 
 
@@ -193,7 +189,7 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.gif">
@@ -206,7 +202,7 @@
     </span>
       <header class="post-header">
         <h1 class="post-title" itemprop="name headline">
-          In Search of an Understandable Consensus Algorithm (Extended Version)
+          Postgres 现存问题
         </h1>
 
         <div class="post-meta">
@@ -215,10 +211,16 @@
                 <i class="far fa-calendar"></i>
               </span>
               <span class="post-meta-item-text">Posted on</span>
-              
 
-              <time title="Created: 2022-05-15 20:59:50 / Modified: 21:01:52" itemprop="dateCreated datePublished" datetime="2022-05-15T20:59:50+08:00">2022-05-15</time>
+              <time title="Created: 2022-05-25 22:57:31" itemprop="dateCreated datePublished" datetime="2022-05-25T22:57:31+08:00">2022-05-25</time>
             </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-05-29 13:06:16" itemprop="dateModified" datetime="2022-05-29T13:06:16+08:00">2022-05-29</time>
+              </span>
 
           
 
@@ -231,71 +233,17 @@
     <div class="post-body" itemprop="articleBody">
 
       
-        <h3 id="Raft特性"><a href="#Raft特性" class="headerlink" title="Raft特性"></a>Raft特性</h3><ul>
-<li>强领导者：和其他共识算法相比，Raft 使用一种更强的领导能力形式。比如，日志条目只从领导者发送给其他的服务器。这种方式简化了对复制日志的管理并且使得 Raft 算法更加易于理解。</li>
-<li>领导选举：Raft 算法使用一个随机计时器来选举领导者。这种方式只是在任何共识算法都必须实现的心跳机制上增加了一点机制。在解决冲突的时候会更加简单快捷。</li>
-<li>关系调整：Raft 使用一种共同一致的方法来处理集群成员变换的问题，在这种方法中，两种不同的配置都要求的大多数机器会重叠。这就使得集群在成员变换的时候依然可以继续工作。</li>
-</ul>
-<span id="more"></span>
-
-<h3 id="Raft设计"><a href="#Raft设计" class="headerlink" title="Raft设计"></a>Raft设计</h3><p><img src="/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/raft_ele.png"></p>
-<p>通过领导人的方式，Raft 将一致性问题分解成了三个相对独立的子问题：</p>
-<ul>
-<li>领导选举：当先存的领导人宕机的时候，一个新的领导人需要被选举出来</li>
-<li>日志复制：领导人必须从客户端接收日志然后复制到集群中的其他节点，并且强制要求其他节点的日志保持和自己相同。</li>
-<li>安全性：在 Raft 中安全性的关键是在下表中展示的状态机安全：如果有任何的服务器节点已经应用了一个确定的日志条目到它的状态机中，那么其他服务器节点不能在同一个日志索引位置应用一个不同的指令。</li>
-</ul>
-<table>
-<thead>
-<tr>
-<th>特性</th>
-<th>解释</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>选举安全特性</td>
-<td>对于一个给定的任期号，最多只会有一个领导人被选举出来</td>
-</tr>
-<tr>
-<td>领导人只附加原则</td>
-<td>领导人绝对不会删除或者覆盖自己的日志，只会增加</td>
-</tr>
-<tr>
-<td>日志匹配原则</td>
-<td>如果两个日志在相同的索引位置的日志条目的任期号相同，那么我们就认为这个日志从头到这个索引位置之间全部完全相同</td>
-</tr>
-<tr>
-<td>领导人完全特性</td>
-<td>如果某个日志条目在某个任期号中已经被提交，那么这个条目必然出现在更大任期号的所有领导人中</td>
-</tr>
-<tr>
-<td>状态机安全特性</td>
-<td>如果一个领导人已经在给定的索引值位置的日志条目应用到状态机中，那么其他任何的服务器在这个索引位置不会提交一个不同的日志</td>
-</tr>
-</tbody></table>
-<p><img src="/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/raft_fn.png"></p>
-<h3 id="成员变更"><a href="#成员变更" class="headerlink" title="成员变更"></a>成员变更</h3><p>server使用log中的最新Configuration (未提交也可以)</p>
-<p>两个阶段</p>
-<ul>
-<li><p>joint consensus</p>
-<p>新旧Configuration同时存在，commit之后开始propose new Configuration</p>
-</li>
-<li><p>new configuration</p>
-</li>
-</ul>
-<p>三个可能问题</p>
-<ul>
-<li><p>新加入的server落后log太多</p>
-<p>新加入的server开始作为non-voting成员</p>
-</li>
-<li><p>当前的leader没有在新Configuration里</p>
-<p>复制log时不把自己算到大多数里面</p>
-<p>当commit了新Configuration的log之后，leader回退至follower</p>
-</li>
-<li><p>新Configuration中被移除的节点可能会破坏集群</p>
-<p>服务器在认为当前的领导者存在时就不理会RequestVote RPC。如果server在最小选举超时时间内收到leader的heartbeat，它就不会更新其任期或授予其投票权。</p>
-</li>
-</ul>
+        <p>原文见 <a target="_blank" rel="noopener" href="https://rbranson.medium.com/10-things-i-hate-about-postgresql-20dbab8c2791">10 Things I Hate About PostgreSQL</a></p>
+<ol>
+<li>灾难性的 XID wrapround<br>XID 是一个32位无符号整数，也就是 XID 的范围是 0到2^32-1；那么超过了 2^32-1的事务怎么办呢？其实 XID 是一个环，超过了 2^32-1 之后又会从头开始分配。需要通过 vacuum 机制来不断的 frozen 元组来回收 XID。<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 无效事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> InvalidTransactionId    ((TransactionId) 0)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// bootstrap 事务号，在数据库初始化过程（BKI执行）中使用</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> BootstrapTransactionId    ((TransactionId) 1)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// frozen 事务号用于表示非常陈旧的元组，它们比所有正常事务号都要早（也就是可见）</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FrozenTransactionId      ((TransactionId) 2)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 第一个正常事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FirstNormalTransactionId  ((TransactionId) 3)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 把 FullTransactionId 的低32位作为无符号整数生成 xid</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> XidFromFullTransactionId(x)    ((uint32) (x).value)</span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">FullTransactionIdAdvance</span><span class="params">(FullTransactionId *dest)</span></span><br><span class="line">&#123;</span><br><span class="line">dest-&gt;value++;</span><br><span class="line"><span class="keyword">while</span> (XidFromFullTransactionId(*dest) &lt; FirstNormalTransactionId)</span><br><span class="line">    dest-&gt;value++;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">FullTransactionId <span class="title function_">GetNewTransactionId</span><span class="params">(<span class="type">bool</span> isSubXact)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">full_xid = ShmemVariableCache-&gt;nextFullXid;</span><br><span class="line">xid = XidFromFullTransactionId(full_xid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">FullTransactionIdAdvance(&amp;ShmemVariableCache-&gt;nextFullXid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line"><span class="keyword">return</span> full_xid;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">AssignTransactionId</span><span class="params">(TransactionState s)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">s-&gt;fullTransactionId = GetNewTransactionId(isSubXact);</span><br><span class="line"><span class="keyword">if</span> (!isSubXact)</span><br><span class="line">    XactTopFullTransactionId = s-&gt;fullTransactionId;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">TransactionId <span class="title function_">GetTopTransactionId</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="keyword">if</span> (!FullTransactionIdIsValid(XactTopFullTransactionId))</span><br><span class="line">    AssignTransactionId(&amp;TopTransactionStateData);</span><br><span class="line"><span class="keyword">return</span> XidFromFullTransactionId(XactTopFullTransactionId);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li>
+<li>Failover 后数据丢失的可能性</li>
+<li>低效的 replication 机制</li>
+<li>MVCC 带来的 GC 问题（vacuum）</li>
+<li>多进程模型</li>
+<li>Primary Key Index 的空间浪费</li>
+<li>不支持 planner hints<br> 现在可以通过 <a target="_blank" rel="noopener" href="https://github.com/ossc-db/pg_hint_plan">pg_hint_plan</a></li>
+<li>没有页面压缩（相比于 MySQL 的 innodb）</li>
+</ol>
 
     </div>
 
@@ -305,8 +253,7 @@
 
       <footer class="post-footer">
           <div class="post-tags">
-              <a href="/tags/Paper/" rel="tag"># Paper</a>
-              <a href="/tags/Raft/" rel="tag"># Raft</a>
+              <a href="/tags/Postgres/" rel="tag"># Postgres</a>
           </div>
 
         
@@ -315,13 +262,10 @@
         
     <div class="post-nav">
       <div class="post-nav-item">
-    <a href="/2022/05/15/Centiman-Elastic-High-Performance-Optimistic-Concurrency-Control-by-Watermarking/" rel="prev" title="Centiman: Elastic, High Performance Optimistic Concurrency Control by Watermarking">
-      <i class="fa fa-chevron-left"></i> Centiman: Elastic, High Performance Optimistic Concurrency Control by Watermarking
+    <a href="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/" rel="prev" title="[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage">
+      <i class="fa fa-chevron-left"></i> [Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage
     </a></div>
-      <div class="post-nav-item">
-    <a href="/2022/05/15/Raft-Quiz/" rel="next" title="Raft Quiz">
-      Raft Quiz <i class="fa fa-chevron-right"></i>
-    </a></div>
+      <div class="post-nav-item"></div>
     </div>
       </footer>
     
@@ -380,7 +324,6 @@
 
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
-          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#Raft%E7%89%B9%E6%80%A7"><span class="nav-number">1.</span> <span class="nav-text">Raft特性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Raft%E8%AE%BE%E8%AE%A1"><span class="nav-number">2.</span> <span class="nav-text">Raft设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%88%90%E5%91%98%E5%8F%98%E6%9B%B4"><span class="nav-number">3.</span> <span class="nav-text">成员变更</span></a></li></ol></div>
       </div>
       <!--/noindex-->
 

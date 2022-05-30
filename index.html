@@ -183,6 +183,81 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="ezreal">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ezreal's blog">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/" class="post-title-link" itemprop="url">Postgres 现存问题</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2022-05-25 22:57:31" itemprop="dateCreated datePublished" datetime="2022-05-25T22:57:31+08:00">2022-05-25</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-05-29 13:06:16" itemprop="dateModified" datetime="2022-05-29T13:06:16+08:00">2022-05-29</time>
+              </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <p>原文见 <a target="_blank" rel="noopener" href="https://rbranson.medium.com/10-things-i-hate-about-postgresql-20dbab8c2791">10 Things I Hate About PostgreSQL</a></p>
+<ol>
+<li>灾难性的 XID wrapround<br>XID 是一个32位无符号整数，也就是 XID 的范围是 0到2^32-1；那么超过了 2^32-1的事务怎么办呢？其实 XID 是一个环，超过了 2^32-1 之后又会从头开始分配。需要通过 vacuum 机制来不断的 frozen 元组来回收 XID。<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 无效事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> InvalidTransactionId    ((TransactionId) 0)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// bootstrap 事务号，在数据库初始化过程（BKI执行）中使用</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> BootstrapTransactionId    ((TransactionId) 1)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// frozen 事务号用于表示非常陈旧的元组，它们比所有正常事务号都要早（也就是可见）</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FrozenTransactionId      ((TransactionId) 2)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 第一个正常事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FirstNormalTransactionId  ((TransactionId) 3)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 把 FullTransactionId 的低32位作为无符号整数生成 xid</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> XidFromFullTransactionId(x)    ((uint32) (x).value)</span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">FullTransactionIdAdvance</span><span class="params">(FullTransactionId *dest)</span></span><br><span class="line">&#123;</span><br><span class="line">dest-&gt;value++;</span><br><span class="line"><span class="keyword">while</span> (XidFromFullTransactionId(*dest) &lt; FirstNormalTransactionId)</span><br><span class="line">    dest-&gt;value++;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">FullTransactionId <span class="title function_">GetNewTransactionId</span><span class="params">(<span class="type">bool</span> isSubXact)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">full_xid = ShmemVariableCache-&gt;nextFullXid;</span><br><span class="line">xid = XidFromFullTransactionId(full_xid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">FullTransactionIdAdvance(&amp;ShmemVariableCache-&gt;nextFullXid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line"><span class="keyword">return</span> full_xid;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">AssignTransactionId</span><span class="params">(TransactionState s)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">s-&gt;fullTransactionId = GetNewTransactionId(isSubXact);</span><br><span class="line"><span class="keyword">if</span> (!isSubXact)</span><br><span class="line">    XactTopFullTransactionId = s-&gt;fullTransactionId;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">TransactionId <span class="title function_">GetTopTransactionId</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="keyword">if</span> (!FullTransactionIdIsValid(XactTopFullTransactionId))</span><br><span class="line">    AssignTransactionId(&amp;TopTransactionStateData);</span><br><span class="line"><span class="keyword">return</span> XidFromFullTransactionId(XactTopFullTransactionId);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li>
+<li>Failover 后数据丢失的可能性</li>
+<li>低效的 replication 机制</li>
+<li>MVCC 带来的 GC 问题（vacuum）</li>
+<li>多进程模型</li>
+<li>Primary Key Index 的空间浪费</li>
+<li>不支持 planner hints<br> 现在可以通过 <a target="_blank" rel="noopener" href="https://github.com/ossc-db/pg_hint_plan">pg_hint_plan</a></li>
+<li>没有页面压缩（相比于 MySQL 的 innodb）</li>
+</ol>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -802,83 +877,6 @@
   
   
 
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="ezreal">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="ezreal's blog">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/" class="post-title-link" itemprop="url">NewSQL 主流实现</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">Posted on</span>
-              
-
-              <time title="Created: 2022-05-12 22:43:24 / Modified: 23:20:22" itemprop="dateCreated datePublished" datetime="2022-05-12T22:43:24+08:00">2022-05-12</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <h3 id="NoSQL-ACID-SQL-Layer-x3D-NewSQL"><a href="#NoSQL-ACID-SQL-Layer-x3D-NewSQL" class="headerlink" title="NoSQL+ACID+SQL Layer &#x3D; NewSQL"></a>NoSQL+ACID+SQL Layer &#x3D; NewSQL</h3><p>在独立的KV存储服务上实现事务ACID语义，再通过分层设计在应用层支持文档、图、SQL等多种数据模型</p>
-<h3 id="MVCC-OCC-x3D-SSI"><a href="#MVCC-OCC-x3D-SSI" class="headerlink" title="MVCC+OCC&#x3D;SSI"></a>MVCC+OCC&#x3D;SSI</h3><p>基于多版本&#x2F;乐观并发控制技术实现可串行化的快照隔离级别</p>
-<h3 id="NewSQL-主流系统"><a href="#NewSQL-主流系统" class="headerlink" title="NewSQL 主流系统"></a>NewSQL 主流系统</h3><p>原生实现</p>
-<ul>
-<li>CockroachDB</li>
-<li>YugaByteDB</li>
-</ul>
-<p>NoSQL+ACID+SQL</p>
-<ul>
-<li>TiDB</li>
-<li>Trafodion</li>
-</ul>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/2022/05/12/NewSQL-%E4%B8%BB%E6%B5%81%E5%AE%9E%E7%8E%B0/#more" rel="contents">
-                Read more &raquo;
-              </a>
-            </div>
-          <!--/noindex-->
-        
-      
-    </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
-
 
   
   <nav class="pagination">
@@ -948,7 +946,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">17</span>
+          <span class="site-state-item-count">18</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>

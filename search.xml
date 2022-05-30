@@ -137,50 +137,6 @@
       </tags>
   </entry>
   <entry>
-    <title>[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage</title>
-    <url>/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/</url>
-    <content><![CDATA[<h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。</p>
-<span id="more"></span>
-
-<h3 id="AlloyDB-架构"><a href="#AlloyDB-架构" class="headerlink" title="AlloyDB 架构"></a>AlloyDB 架构</h3><p>AlloyDB 存储层是一个分布式系统，由三个主要部分组成：</p>
-<ul>
-<li>一种低延迟的 regional log storage service，用于高速的 WAL 写入</li>
-<li>负责处理 WAL 并生成 “Materialized(物化)” 数据库页面的 log processing service (LPS)</li>
-<li>负责对数据进行容错、分片的 regional block storage，在区域存储发生故障的情况下也能保证持久性</li>
-</ul>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png" alt="Overview of PostgreSQL as integrated with the storage service."></p>
-<h4 id="数据流程"><a href="#数据流程" class="headerlink" title="数据流程"></a>数据流程</h4><ul>
-<li>Primary Instance 持久化 WAL ，将数据库修改操作（INSERT&#x2F;DELETE&#x2F;UPDATE）传送到 log storage。随后，LPS 不断重放这些 WAL 的修改操作，并将最新的数据库页面物化到 block storage。</li>
-<li>为了使 Replica Instances 的本地缓存保持最新，AlloyDB 还将 WAL 记录从 Primary Instance 流式传输到 Replica Instances，以通知它们最新的更改。</li>
-</ul>
-<h4 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h4><ul>
-<li>Full compute&#x2F;storage disaggregation<br>LPS 可以根据工作负载进行横向扩展，并在需要时透明地添加更多计算资源来处理日志以避免热点</li>
-<li>Storage-layer replication<br>跨多个区域同步复制所有 Data Block</li>
-<li>Efficient IO paths &#x2F; no full-page writes<br>对于更新操作，计算层仅将 WAL 传递给存储层，存储层不断重放 WAL。在这种设计中，数据库层不需要 Checkpoint，也不需要通过将完整的 Data Block发送到存储层来避免 torn pages problem</li>
-<li>Low-latency WAL writing</li>
-<li>Fast creation of read replica instances</li>
-<li>Fast restart recovery</li>
-<li>Storage-layer backups</li>
-</ul>
-<h3 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h3><h4 id="写入请求"><a href="#写入请求" class="headerlink" title="写入请求"></a>写入请求</h4><p>由客户端向 Primary Instance 发起，在经过 DB 层解析后，变为一组 WAL 发到存储层。在 WAL 同步写入成功后，事务提交成功返回。之后，LPS 会将日志异步的物化为 Data Block。</p>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png" alt="Write Process"></p>
-<h4 id="读取请求"><a href="#读取请求" class="headerlink" title="读取请求"></a>读取请求</h4><ul>
-<li>由客户端向任何 Instance 发起，在 DB 层解析后，如果命中该 DB 层中的 Buffer Cache，则直接返回；否则去更大的、类似二级缓存的 Ultra-fast Cache 中去找，如命中，则仍可不访问存储层。</li>
-<li>如 Ultra-fast Cache 中仍然缺少所需 block，则会带上 block id 和 LSN，向存储层发送 block 读取请求，<strong>这里的 Ultra-fast Cache 会不会是 NVM 之类的存储介质？</strong></li>
-<li>LSN 用于等待 LPS apply 进度，以保证一致性视图。</li>
-</ul>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png" alt="Read Process"></p>
-<h3 id="存储层弹性伸缩"><a href="#存储层弹性伸缩" class="headerlink" title="存储层弹性伸缩"></a>存储层弹性伸缩</h3><p>Data Block 按组划分到不同的 Shard 中（如一个 Block 是 8KB，一个 Shard 是 10GB，那么一个 Shard 就包含 1310720 个 Block）。每个 Shard 对应一个 LPS，同时 Shard 和 LPS 的映射关系可以会根据 LPS 的伸缩动态变化。</p>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png" alt="LPS Elasticity"></p>
-<h3 id="存储层-Replication-和-Recovery"><a href="#存储层-Replication-和-Recovery" class="headerlink" title="存储层 Replication 和 Recovery"></a>存储层 Replication 和 Recovery</h3><p>AlloyDB 的目标是提供数据持久性和高系统可用性，即使在区域性故障的情况下（例如，在数据中心断电或火灾的情况下）也是如此。为此，每个 AlloyDB 实例的存储层分布在三个 Zone 中。每个 Zone 都有一个完整的数据库状态副本，它通过应用来自 log storage 的 WAL 来不断更新 Data Block。<br><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png" alt="Replication"></p>
-]]></content>
-      <tags>
-        <tag>Cloud Native</tag>
-        <tag>Disaggregation</tag>
-        <tag>Postgres</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>HotRing: A Hotspot-Aware In-Memory Key-Value Store</title>
     <url>/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/</url>
     <content><![CDATA[<p>Tair<br>(1) mdb是定位于cache缓存，类似于memcache的一个支持kv 内存缓存框架<br>(2) rdb是 定位于cache缓存，采用了redis的内存存储结构的一个支持kv、list等复杂数据结构的缓存框架<br>(3) ldb是一个定位于高性能存储，并可选择内嵌mdb cache加速，这种情况下cache与持久化存储的数据一致性由tair进行维护,支持kv及分级key存储，数据排序的缓存框架（leveldb）</p>
@@ -718,6 +674,69 @@
 ]]></content>
       <tags>
         <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Postgres 现存问题</title>
+    <url>/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/</url>
+    <content><![CDATA[<p>原文见 <a href="https://rbranson.medium.com/10-things-i-hate-about-postgresql-20dbab8c2791">10 Things I Hate About PostgreSQL</a></p>
+<ol>
+<li>灾难性的 XID wrapround<br>XID 是一个32位无符号整数，也就是 XID 的范围是 0到2^32-1；那么超过了 2^32-1的事务怎么办呢？其实 XID 是一个环，超过了 2^32-1 之后又会从头开始分配。需要通过 vacuum 机制来不断的 frozen 元组来回收 XID。<figure class="highlight c"><table><tr><td class="code"><pre><span class="line"><span class="comment">// 无效事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> InvalidTransactionId    ((TransactionId) 0)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// bootstrap 事务号，在数据库初始化过程（BKI执行）中使用</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> BootstrapTransactionId    ((TransactionId) 1)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// frozen 事务号用于表示非常陈旧的元组，它们比所有正常事务号都要早（也就是可见）</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FrozenTransactionId      ((TransactionId) 2)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 第一个正常事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FirstNormalTransactionId  ((TransactionId) 3)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 把 FullTransactionId 的低32位作为无符号整数生成 xid</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> XidFromFullTransactionId(x)    ((uint32) (x).value)</span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">FullTransactionIdAdvance</span><span class="params">(FullTransactionId *dest)</span></span><br><span class="line">&#123;</span><br><span class="line">dest-&gt;value++;</span><br><span class="line"><span class="keyword">while</span> (XidFromFullTransactionId(*dest) &lt; FirstNormalTransactionId)</span><br><span class="line">    dest-&gt;value++;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">FullTransactionId <span class="title function_">GetNewTransactionId</span><span class="params">(<span class="type">bool</span> isSubXact)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">full_xid = ShmemVariableCache-&gt;nextFullXid;</span><br><span class="line">xid = XidFromFullTransactionId(full_xid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">FullTransactionIdAdvance(&amp;ShmemVariableCache-&gt;nextFullXid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line"><span class="keyword">return</span> full_xid;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">AssignTransactionId</span><span class="params">(TransactionState s)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">s-&gt;fullTransactionId = GetNewTransactionId(isSubXact);</span><br><span class="line"><span class="keyword">if</span> (!isSubXact)</span><br><span class="line">    XactTopFullTransactionId = s-&gt;fullTransactionId;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">TransactionId <span class="title function_">GetTopTransactionId</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="keyword">if</span> (!FullTransactionIdIsValid(XactTopFullTransactionId))</span><br><span class="line">    AssignTransactionId(&amp;TopTransactionStateData);</span><br><span class="line"><span class="keyword">return</span> XidFromFullTransactionId(XactTopFullTransactionId);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li>
+<li>Failover 后数据丢失的可能性</li>
+<li>低效的 replication 机制</li>
+<li>MVCC 带来的 GC 问题（vacuum）</li>
+<li>多进程模型</li>
+<li>Primary Key Index 的空间浪费</li>
+<li>不支持 planner hints<br> 现在可以通过 <a href="https://github.com/ossc-db/pg_hint_plan">pg_hint_plan</a></li>
+<li>没有页面压缩（相比于 MySQL 的 innodb）</li>
+</ol>
+]]></content>
+      <tags>
+        <tag>Postgres</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage</title>
+    <url>/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/</url>
+    <content><![CDATA[<h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。</p>
+<span id="more"></span>
+
+<h3 id="AlloyDB-架构"><a href="#AlloyDB-架构" class="headerlink" title="AlloyDB 架构"></a>AlloyDB 架构</h3><p>AlloyDB 存储层是一个分布式系统，由三个主要部分组成：</p>
+<ul>
+<li>一种低延迟的 regional log storage service，用于高速的 WAL 写入</li>
+<li>负责处理 WAL 并生成 “Materialized(物化)” 数据库页面的 log processing service (LPS)</li>
+<li>负责对数据进行容错、分片的 regional block storage，在区域存储发生故障的情况下也能保证持久性</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png" alt="Overview of PostgreSQL as integrated with the storage service."></p>
+<h4 id="数据流程"><a href="#数据流程" class="headerlink" title="数据流程"></a>数据流程</h4><ul>
+<li>Primary Instance 持久化 WAL ，将数据库修改操作（INSERT&#x2F;DELETE&#x2F;UPDATE）传送到 log storage。随后，LPS 不断重放这些 WAL 的修改操作，并将最新的数据库页面物化到 block storage。</li>
+<li>为了使 Replica Instances 的本地缓存保持最新，AlloyDB 还将 WAL 记录从 Primary Instance 流式传输到 Replica Instances，以通知它们最新的更改。</li>
+</ul>
+<h4 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h4><ul>
+<li>Full compute&#x2F;storage disaggregation<br>LPS 可以根据工作负载进行横向扩展，并在需要时透明地添加更多计算资源来处理日志以避免热点</li>
+<li>Storage-layer replication<br>跨多个区域同步复制所有 Data Block</li>
+<li>Efficient IO paths &#x2F; no full-page writes<br>对于更新操作，计算层仅将 WAL 传递给存储层，存储层不断重放 WAL。在这种设计中，数据库层不需要 Checkpoint，也不需要通过将完整的 Data Block发送到存储层来避免 torn pages problem</li>
+<li>Low-latency WAL writing</li>
+<li>Fast creation of read replica instances</li>
+<li>Fast restart recovery</li>
+<li>Storage-layer backups</li>
+</ul>
+<h3 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h3><h4 id="写入请求"><a href="#写入请求" class="headerlink" title="写入请求"></a>写入请求</h4><p>由客户端向 Primary Instance 发起，在经过 DB 层解析后，变为一组 WAL 发到存储层。在 WAL 同步写入成功后，事务提交成功返回。之后，LPS 会将日志异步的物化为 Data Block。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png" alt="Write Process"></p>
+<h4 id="读取请求"><a href="#读取请求" class="headerlink" title="读取请求"></a>读取请求</h4><ul>
+<li>由客户端向任何 Instance 发起，在 DB 层解析后，如果命中该 DB 层中的 Buffer Cache，则直接返回；否则去更大的、类似二级缓存的 Ultra-fast Cache 中去找，如命中，则仍可不访问存储层。</li>
+<li>如 Ultra-fast Cache 中仍然缺少所需 block，则会带上 block id 和 LSN，向存储层发送 block 读取请求，<strong>这里的 Ultra-fast Cache 会不会是 NVM 之类的存储介质？</strong></li>
+<li>LSN 用于等待 LPS apply 进度，以保证一致性视图。</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png" alt="Read Process"></p>
+<h3 id="存储层弹性伸缩"><a href="#存储层弹性伸缩" class="headerlink" title="存储层弹性伸缩"></a>存储层弹性伸缩</h3><p>Data Block 按组划分到不同的 Shard 中（如一个 Block 是 8KB，一个 Shard 是 10GB，那么一个 Shard 就包含 1310720 个 Block）。每个 Shard 对应一个 LPS，同时 Shard 和 LPS 的映射关系可以会根据 LPS 的伸缩动态变化。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png" alt="LPS Elasticity"></p>
+<h3 id="存储层-Replication-和-Recovery"><a href="#存储层-Replication-和-Recovery" class="headerlink" title="存储层 Replication 和 Recovery"></a>存储层 Replication 和 Recovery</h3><p>AlloyDB 的目标是提供数据持久性和高系统可用性，即使在区域性故障的情况下（例如，在数据中心断电或火灾的情况下）也是如此。为此，每个 AlloyDB 实例的存储层分布在三个 Zone 中。每个 Zone 都有一个完整的数据库状态副本，它通过应用来自 log storage 的 WAL 来不断更新 Data Block。<br><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png" alt="Replication"></p>
+]]></content>
+      <tags>
+        <tag>Postgres</tag>
+        <tag>Cloud Native</tag>
+        <tag>Disaggregation</tag>
       </tags>
   </entry>
   <entry>
