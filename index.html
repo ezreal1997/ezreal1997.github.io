@@ -183,6 +183,78 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="ezreal">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ezreal's blog">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/" class="post-title-link" itemprop="url">FoundationDB: A Distributed Unbundled Transactional Key Value Store</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2022-06-09 17:42:34" itemprop="dateCreated datePublished" datetime="2022-06-09T17:42:34+08:00">2022-06-09</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-06-10 14:53:19" itemprop="dateModified" datetime="2022-06-10T14:53:19+08:00">2022-06-10</time>
+              </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <p>FoundationDB 和传统的 key value store 相比，一方面在存储层实现的是强一致 ACID，另一方面通过可扩展的方式支持更多数据模型，并发控制采用 OCC 同时不支持超过 5s 的长事务。</p>
+          <!--noindex-->
+            <div class="post-button">
+              <a class="btn" href="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/#more" rel="contents">
+                Read more &raquo;
+              </a>
+            </div>
+          <!--/noindex-->
+        
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -801,82 +873,6 @@
   
   
 
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="ezreal">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="ezreal's blog">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/" class="post-title-link" itemprop="url">OCC 当前研究</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">Posted on</span>
-              
-
-              <time title="Created: 2022-05-12 22:45:09 / Modified: 23:20:32" itemprop="dateCreated datePublished" datetime="2022-05-12T22:45:09+08:00">2022-05-12</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <h3 id="内存数据库"><a href="#内存数据库" class="headerlink" title="内存数据库"></a>内存数据库</h3><ul>
-<li>随着硬件技术的发展，多核（几十、几百）、大内存（T级别）的单节点配置已在市场上出现，意味着大多数OLTP场景下的数据处理可以完全运行在内存中，SAP HANA、MemSQL、TimesTen、SolidDB、Hekaton等内存数据库也应运而生</li>
-<li>关注单机事务吞吐量</li>
-</ul>
-<h3 id="分布式NewSQL数据库"><a href="#分布式NewSQL数据库" class="headerlink" title="分布式NewSQL数据库"></a>分布式NewSQL数据库</h3><ul>
-<li>NoSQL系统虽然实现了承诺的目标，但其不支持SQL语言、缺乏强一致性</li>
-<li>既具有NoSQL的所有优点并且还支持SQL语言及ACID事务，如F1、Spanner、CockroachDB、TiDB、OceanBase等</li>
-<li>关注分布式事务吞吐量</li>
-<li>性能优化目标可以统一描述为在硬件资源充足的情况下如何提高事务吞吐量。节约资源已不再是重点，减少系统同步，提高资源利用率才是核心问题</li>
-<li>在分布式计算环境下，网络交互的延迟或异常容易导致2PL协议可能长时间持有锁从而导致系统整体事务吞吐率降低或死锁。</li>
-</ul>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/#more" rel="contents">
-                Read more &raquo;
-              </a>
-            </div>
-          <!--/noindex-->
-        
-      
-    </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
-
 
   
   <nav class="pagination">
@@ -946,14 +942,14 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">18</span>
+          <span class="site-state-item-count">19</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-count">14</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>

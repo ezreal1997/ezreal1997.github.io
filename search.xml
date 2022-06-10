@@ -73,6 +73,59 @@
       </tags>
   </entry>
   <entry>
+    <title>FoundationDB: A Distributed Unbundled Transactional Key Value Store</title>
+    <url>/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/</url>
+    <content><![CDATA[<p>FoundationDB 和传统的 key value store 相比，一方面在存储层实现的是强一致 ACID，另一方面通过可扩展的方式支持更多数据模型，并发控制采用 OCC 同时不支持超过 5s 的长事务。</p>
+<span id="more"></span>
+
+<h2 id="整体架构"><a href="#整体架构" class="headerlink" title="整体架构"></a>整体架构</h2><p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/arch.png" alt="架构"></p>
+<p>FoundationDB 架构的核心是<strong>松耦合</strong>，整体可以分为 Control Plane 和 Data Plane 两个模块。</p>
+<ul>
+<li>Control Plane 负责系统的管理和监控，使用 Active Disk Paxos 保证高可用性，并选举出单个的 Cluster Controller，controller 会创建另外几个单实例进程：Data Distributor，Rate Keeper，Sequencer<ul>
+<li>Sequencer 负责给事务分发 read version 和 commit version</li>
+<li>Data Distributor 负责监控 Storage Server 集群状态以及负载均衡</li>
+<li>Rate Keeper 负责流控，避免系统 overload</li>
+</ul>
+</li>
+<li>Data Plane 负责用户和系统数据的存储，其中 Transaction System 负责处理写请求，Storage System 负责处理读请求，不同系统之间完全解耦，同时可以各自独立扩展<ul>
+<li>TS 层负责事务处理，由 Sequencer 创建 Proxy &#x2F; Resolver，整个 TS 层是无状态的，便于发生 failure 时，快速整体重启</li>
+<li>LS 层负责 WAL 的存储，按照 key range 做分片存储，且每个分片有多个副本</li>
+<li>SS 层负责实际数据的存储，和 LS 的分片对应，每个分片有自己的 WAL 日志，底层目前使用的是 SQLite，后续会考虑Rocksdb</li>
+</ul>
+</li>
+</ul>
+<h2 id="事务处理"><a href="#事务处理" class="headerlink" title="事务处理"></a>事务处理</h2><p>FoundationDB 利用 OCC + MVCC 的策略来实现串行化事务。</p>
+<ul>
+<li>读请求<br>client 连接 Proxy，获取读时间戳，Proxy 向 Sequencer 获取 read version 并返回 client，client 利用 read version 从 storage server 直接读取目标版本数据，在本地进行物化并缓存</li>
+<li>写请求<br>事务提交时带着 read set + write set 发给 Proxy，Proxy 首先向 Sequencer 获取 commit version，然后发送给 Resolver做冲突检测（Resovler 也是根据 key range 分片启动多个实例，这样可以并发做冲突检测）</li>
+</ul>
+<p>FDB 实现的是可串行化事务，commit version 的顺序就是事务提交顺序，因此可以认为事务需要在 commit 点瞬时完成，冲突检测就是判断在 (read version, commit version) 之间，是否并发事务写入了冲突的数据。其中 Resolver 的冲突检测算法如下图所示：</p>
+<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/conflict_detect.png" alt="冲突检测算法"></p>
+<p>为了提高冲突检测效率，Resolver 使用 skiplist 维护数据的 LastCommit 信息，即修改的 key range -&gt; commit version 的映射，记录 key range 最近一次的 commit version，便于找到对某个 key&#x2F;key-range 最近一次 commit version 是否在当前事务的 (read version, commit version)之间，不冲突即用当前事务的 commit version 更新 LastCommit。</p>
+<p>这里有一个问题，由于是多个 Resovler 并发检测冲突，可能一些 Resolver 局部认为是无冲突的，因此更新了自己维护的LastCommit 结构，导致后续不应该失败的事务发生冲突(false-positive）。FDB认为这不是大问题，首先它面向多租户应用，冲突较少，一般事务都会落入一个 Resovler。此外即使失败后重试，新的事务的 read version 增长后，超过这个伪提交事务的 commit version 即可。</p>
+<p>除了 read-write 事务，还有 read-only 事务，只获取 read version 从 SS 读取数据，然后 client 直接提交就可以，等同于在 read version 瞬时完成，不需要检测冲突。 此外在 read-write 事务中还允许进行 snapshot read，这种 read 不放入 read set 中，不做冲突检测。</p>
+<p>所有 Resovler 返回成功时，Proxy 认为事务可以提交，向 LogServer 发送 WAL 进行多副本同步复制，日志落盘后 Proxy 认为事务提交成功，返回给 client。同时 Storage Server 异步的从 LS 获取 log entry 并 apply，即使log entry 还没有落盘也会 apply，FDB 通过采用这种激进的物化策略来保证 data 和 log 之间的低延迟。</p>
+<p>可串行化的并发控制使得 log entry 之间形成了严格的顺序，大大简化了 log 管理的逻辑，可以用 version 来表示 LSN，针对每个 key，它所对应的实际是一个有序的 log entry 队列，依次 apply 就可以物化成最新版本。</p>
+<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/logsync.png" alt="Proxy 写 log 流程"></p>
+<p>Proxy 本地有缓存一份 key range -&gt; SS 的映射关系，这样就可以知道要写入哪些 SS 和对应的 LS。例如上图中，LS1 + LS4 是要写入的 LS，由于是3副本，需要再额外写一个 LS，其余的 LS 也要发送，但只传递 Log Header，其中包含的最主要信息是当前的 LSN 和 Proxy 上的 KCV，即本 Proxy 已知的最大已提交事务，LS 收到后会更新自己本地的 KCV，这个 KCV 在 recovery 时会使用。</p>
+<p>LS 上的 WAL -&gt; SS 和 apply redo 并不在 commit 流程中，是异步持续完成，因此可以说 FDB 也遵循了 ‘log is data’ 的思想。这种方式 client 做 read 一般可以读到目标 version 的数据，如果不行就等待或者向其他副本请求，都不行的话，可以超时后重试。<br>由于是异步 apply，可以做 batching，将一批更新缓存在 SS 上，批量刷盘提高 IO 效率。但这里也有个问题，由于 LS 中在内存中（未提交）的 entry 也可能被apply，因此 SS 是有脏数据的，在 recovery 时要 rollback。</p>
+<h2 id="数据可靠性"><a href="#数据可靠性" class="headerlink" title="数据可靠性"></a>数据可靠性</h2><p>FDB 由于 redo log apply 是在后台持续进行的，因此本质上它将 redo apply 从 recovery 中解耦出来，等于持续在 checkpointing，在 recovery 期间不需要做 redo apply，只是确认当前的 log 序列需要恢复到哪个位置即可，后续基于 log -&gt; data 的过程仍然是异步，以此保证了 recovery 的速度。</p>
+<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/recovery.png" alt="FDB Recovery"></p>
+<p>发现 failure 后，旧的 Sequencer 退出，新 Sequencer 启动，并从 Coordinator 获取老的 TS 的配置信息，包括旧的 LS 的位置等，同时给 Coordinator 加个全局锁，避免并发 recovery，然后关闭老的 LS，禁止接收新的 log 写入，开始恢复，恢复完成后启动 TS 接收用户请求。</p>
+<p>Proxy 和 Resolver 都是 stateless 的，直接重启即可，只有 LogServer 有 log 信息。由于在日常提交写日志时，Proxy 会把本地记录的 KCV 广播给所有 LS，LS 中就记录了自己见过的最大的 KCV。选取所有 LS 中 KCV 的最大值，在这个值之前的事务，其日志已经完全复制并落盘，且已告知 Proxy，可以作为上一个 epoch 的终点，称为 PEV（previous epoch’s end version）。</p>
+<p>同时每个 LogServer 都记录了本地已持久化的 version (DV)，选取所有 DV 中的最小值，作为 Recovery Version(RV)，在 [PEV, RV] 之间的日志，已持久化且不在内存中，但不确定是否已提交（因为 Proxy 没有该信息，可能崩溃的那个没持久化），因此这部分需要进行恢复，而大于 RV 的 log entry，肯定没有多副本都持久化，因此不可能提交，这部分要undo。</p>
+<h2 id="优化"><a href="#优化" class="headerlink" title="优化"></a>优化</h2><ol>
+<li>Transaction batching<br>在 Proxy 上为了减少与 Sequencer&#x2F;LS 的交互成本，可以把不冲突的并发事务合并，获取同一个 commit version，并一起下发到 LogServer，相当于 group commit。<br>这个策略是可以自适应的，在系统负载不大时，为了减少延迟，可以减小 batch 大小，当系统重负载时，为了保证吞吐则可以加大 batch。</li>
+<li>Atomic operations<br>对于一些只写不读的操作，其相互之间可以不做冲突检测，直接获取提交时间戳就可以，这对于某些 counter 类型的操作会提高效率，因为避免了从 storage 的一次读，也避免了 resolve confilct。</li>
+</ol>
+]]></content>
+      <tags>
+        <tag>OCC</tag>
+        <tag>FoundationDB</tag>
+        <tag>Paper</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Golang HTTP transport</title>
     <url>/2022/05/12/Golang-HTTP-transport/</url>
     <content><![CDATA[<p>使用golang net&#x2F;http库发送http请求，最后都是调用 transport的 RoundTrip方法</p>
@@ -134,6 +187,50 @@
 ]]></content>
       <tags>
         <tag>Golang</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage</title>
+    <url>/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/</url>
+    <content><![CDATA[<h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。</p>
+<span id="more"></span>
+
+<h3 id="AlloyDB-架构"><a href="#AlloyDB-架构" class="headerlink" title="AlloyDB 架构"></a>AlloyDB 架构</h3><p>AlloyDB 存储层是一个分布式系统，由三个主要部分组成：</p>
+<ul>
+<li>一种低延迟的 regional log storage service，用于高速的 WAL 写入</li>
+<li>负责处理 WAL 并生成 “Materialized(物化)” 数据库页面的 log processing service (LPS)</li>
+<li>负责对数据进行容错、分片的 regional block storage，在区域存储发生故障的情况下也能保证持久性</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png" alt="Overview of PostgreSQL as integrated with the storage service."></p>
+<h4 id="数据流程"><a href="#数据流程" class="headerlink" title="数据流程"></a>数据流程</h4><ul>
+<li>Primary Instance 持久化 WAL ，将数据库修改操作（INSERT&#x2F;DELETE&#x2F;UPDATE）传送到 log storage。随后，LPS 不断重放这些 WAL 的修改操作，并将最新的数据库页面物化到 block storage。</li>
+<li>为了使 Replica Instances 的本地缓存保持最新，AlloyDB 还将 WAL 记录从 Primary Instance 流式传输到 Replica Instances，以通知它们最新的更改。</li>
+</ul>
+<h4 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h4><ul>
+<li>Full compute&#x2F;storage disaggregation<br>LPS 可以根据工作负载进行横向扩展，并在需要时透明地添加更多计算资源来处理日志以避免热点</li>
+<li>Storage-layer replication<br>跨多个区域同步复制所有 Data Block</li>
+<li>Efficient IO paths &#x2F; no full-page writes<br>对于更新操作，计算层仅将 WAL 传递给存储层，存储层不断重放 WAL。在这种设计中，数据库层不需要 Checkpoint，也不需要通过将完整的 Data Block发送到存储层来避免 torn pages problem</li>
+<li>Low-latency WAL writing</li>
+<li>Fast creation of read replica instances</li>
+<li>Fast restart recovery</li>
+<li>Storage-layer backups</li>
+</ul>
+<h3 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h3><h4 id="写入请求"><a href="#写入请求" class="headerlink" title="写入请求"></a>写入请求</h4><p>由客户端向 Primary Instance 发起，在经过 DB 层解析后，变为一组 WAL 发到存储层。在 WAL 同步写入成功后，事务提交成功返回。之后，LPS 会将日志异步的物化为 Data Block。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png" alt="Write Process"></p>
+<h4 id="读取请求"><a href="#读取请求" class="headerlink" title="读取请求"></a>读取请求</h4><ul>
+<li>由客户端向任何 Instance 发起，在 DB 层解析后，如果命中该 DB 层中的 Buffer Cache，则直接返回；否则去更大的、类似二级缓存的 Ultra-fast Cache 中去找，如命中，则仍可不访问存储层。</li>
+<li>如 Ultra-fast Cache 中仍然缺少所需 block，则会带上 block id 和 LSN，向存储层发送 block 读取请求，<strong>这里的 Ultra-fast Cache 会不会是 NVM 之类的存储介质？</strong></li>
+<li>LSN 用于等待 LPS apply 进度，以保证一致性视图。</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png" alt="Read Process"></p>
+<h3 id="存储层弹性伸缩"><a href="#存储层弹性伸缩" class="headerlink" title="存储层弹性伸缩"></a>存储层弹性伸缩</h3><p>Data Block 按组划分到不同的 Shard 中（如一个 Block 是 8KB，一个 Shard 是 10GB，那么一个 Shard 就包含 1310720 个 Block）。每个 Shard 对应一个 LPS，同时 Shard 和 LPS 的映射关系可以会根据 LPS 的伸缩动态变化。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png" alt="LPS Elasticity"></p>
+<h3 id="存储层-Replication-和-Recovery"><a href="#存储层-Replication-和-Recovery" class="headerlink" title="存储层 Replication 和 Recovery"></a>存储层 Replication 和 Recovery</h3><p>AlloyDB 的目标是提供数据持久性和高系统可用性，即使在区域性故障的情况下（例如，在数据中心断电或火灾的情况下）也是如此。为此，每个 AlloyDB 实例的存储层分布在三个 Zone 中。每个 Zone 都有一个完整的数据库状态副本，它通过应用来自 log storage 的 WAL 来不断更新 Data Block。<br><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png" alt="Replication"></p>
+]]></content>
+      <tags>
+        <tag>Cloud Native</tag>
+        <tag>Disaggregation</tag>
+        <tag>Postgres</tag>
       </tags>
   </entry>
   <entry>
@@ -693,50 +790,6 @@
 ]]></content>
       <tags>
         <tag>Postgres</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage</title>
-    <url>/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/</url>
-    <content><![CDATA[<h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。</p>
-<span id="more"></span>
-
-<h3 id="AlloyDB-架构"><a href="#AlloyDB-架构" class="headerlink" title="AlloyDB 架构"></a>AlloyDB 架构</h3><p>AlloyDB 存储层是一个分布式系统，由三个主要部分组成：</p>
-<ul>
-<li>一种低延迟的 regional log storage service，用于高速的 WAL 写入</li>
-<li>负责处理 WAL 并生成 “Materialized(物化)” 数据库页面的 log processing service (LPS)</li>
-<li>负责对数据进行容错、分片的 regional block storage，在区域存储发生故障的情况下也能保证持久性</li>
-</ul>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png" alt="Overview of PostgreSQL as integrated with the storage service."></p>
-<h4 id="数据流程"><a href="#数据流程" class="headerlink" title="数据流程"></a>数据流程</h4><ul>
-<li>Primary Instance 持久化 WAL ，将数据库修改操作（INSERT&#x2F;DELETE&#x2F;UPDATE）传送到 log storage。随后，LPS 不断重放这些 WAL 的修改操作，并将最新的数据库页面物化到 block storage。</li>
-<li>为了使 Replica Instances 的本地缓存保持最新，AlloyDB 还将 WAL 记录从 Primary Instance 流式传输到 Replica Instances，以通知它们最新的更改。</li>
-</ul>
-<h4 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h4><ul>
-<li>Full compute&#x2F;storage disaggregation<br>LPS 可以根据工作负载进行横向扩展，并在需要时透明地添加更多计算资源来处理日志以避免热点</li>
-<li>Storage-layer replication<br>跨多个区域同步复制所有 Data Block</li>
-<li>Efficient IO paths &#x2F; no full-page writes<br>对于更新操作，计算层仅将 WAL 传递给存储层，存储层不断重放 WAL。在这种设计中，数据库层不需要 Checkpoint，也不需要通过将完整的 Data Block发送到存储层来避免 torn pages problem</li>
-<li>Low-latency WAL writing</li>
-<li>Fast creation of read replica instances</li>
-<li>Fast restart recovery</li>
-<li>Storage-layer backups</li>
-</ul>
-<h3 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h3><h4 id="写入请求"><a href="#写入请求" class="headerlink" title="写入请求"></a>写入请求</h4><p>由客户端向 Primary Instance 发起，在经过 DB 层解析后，变为一组 WAL 发到存储层。在 WAL 同步写入成功后，事务提交成功返回。之后，LPS 会将日志异步的物化为 Data Block。</p>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png" alt="Write Process"></p>
-<h4 id="读取请求"><a href="#读取请求" class="headerlink" title="读取请求"></a>读取请求</h4><ul>
-<li>由客户端向任何 Instance 发起，在 DB 层解析后，如果命中该 DB 层中的 Buffer Cache，则直接返回；否则去更大的、类似二级缓存的 Ultra-fast Cache 中去找，如命中，则仍可不访问存储层。</li>
-<li>如 Ultra-fast Cache 中仍然缺少所需 block，则会带上 block id 和 LSN，向存储层发送 block 读取请求，<strong>这里的 Ultra-fast Cache 会不会是 NVM 之类的存储介质？</strong></li>
-<li>LSN 用于等待 LPS apply 进度，以保证一致性视图。</li>
-</ul>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png" alt="Read Process"></p>
-<h3 id="存储层弹性伸缩"><a href="#存储层弹性伸缩" class="headerlink" title="存储层弹性伸缩"></a>存储层弹性伸缩</h3><p>Data Block 按组划分到不同的 Shard 中（如一个 Block 是 8KB，一个 Shard 是 10GB，那么一个 Shard 就包含 1310720 个 Block）。每个 Shard 对应一个 LPS，同时 Shard 和 LPS 的映射关系可以会根据 LPS 的伸缩动态变化。</p>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png" alt="LPS Elasticity"></p>
-<h3 id="存储层-Replication-和-Recovery"><a href="#存储层-Replication-和-Recovery" class="headerlink" title="存储层 Replication 和 Recovery"></a>存储层 Replication 和 Recovery</h3><p>AlloyDB 的目标是提供数据持久性和高系统可用性，即使在区域性故障的情况下（例如，在数据中心断电或火灾的情况下）也是如此。为此，每个 AlloyDB 实例的存储层分布在三个 Zone 中。每个 Zone 都有一个完整的数据库状态副本，它通过应用来自 log storage 的 WAL 来不断更新 Data Block。<br><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png" alt="Replication"></p>
-]]></content>
-      <tags>
-        <tag>Postgres</tag>
-        <tag>Cloud Native</tag>
-        <tag>Disaggregation</tag>
       </tags>
   </entry>
   <entry>
