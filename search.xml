@@ -265,63 +265,6 @@
       </tags>
   </entry>
   <entry>
-    <title>HotRing: A Hotspot-Aware In-Memory Key-Value Store</title>
-    <url>/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/</url>
-    <content><![CDATA[<p>Tair<br>(1) mdb是定位于cache缓存，类似于memcache的一个支持kv 内存缓存框架<br>(2) rdb是 定位于cache缓存，采用了redis的内存存储结构的一个支持kv、list等复杂数据结构的缓存框架<br>(3) ldb是一个定位于高性能存储，并可选择内嵌mdb cache加速，这种情况下cache与持久化存储的数据一致性由tair进行维护,支持kv及分级key存储，数据排序的缓存框架（leveldb）</p>
-<span id="more"></span>
-
-<p>通常情况下，一个集群中包含2台configserver及多台dataServer。</p>
-<p>两台configserver互为主备并通过维护和dataserver之间的心跳获知集群中存活可用的dataserver，构建数据在集群中的分布信息（对照表）。</p>
-<p>dataserver负责数据的存储，并按照configserver的指示完成数据的复制和迁移工作。</p>
-<p>client在启动的时候，从configserver获取数据分布信息，根据数据分布信息和相应的dataserver交互完成用户的请求。</p>
-<p>invalidserver主要负责对等集群的删除和隐藏操作，保证对等集群的数据一致。</p>
-<h2 id="Chain-Base-Index"><a href="#Chain-Base-Index" class="headerlink" title="Chain Base Index"></a>Chain Base Index</h2><p>同时，随着链上 item 数量的不断增加，对 hot item 的内存访问次数可能会线性增长</p>
-<p>所以我们需要一个热点感知的hash index</p>
-<h2 id="Hotspot-Awareness-challenges"><a href="#Hotspot-Awareness-challenges" class="headerlink" title="Hotspot-Awareness challenges"></a>Hotspot-Awareness challenges</h2><p>用一个 head 指针来指向最热的位置，head 指针能动态指向任意一个 item</p>
-<p>为了保证所有 item 的可访问性不受 head 指针的影响，使用有序环结构替换之前的链式结构，这样的环＋head Pointer就可以避免 reorder</p>
-<h2 id="Ordered-ring-structure"><a href="#Ordered-ring-structure" class="headerlink" title="Ordered-ring structure"></a>Ordered-ring structure</h2><p>环装结构可能会导致一个问题：之前的链式结构下，如果next是nil那就可以停止查找，但现在是环装结构如果 target item not found，那么可能会无限移动。</p>
-<p>所以需要知道什么时候需要结束查找：mark 第一个 item 是不合理的，因为这个 item 可能被并发修改，比如被删除了就会有问题。</p>
-<p>可以通过排序，对key进行排序，如果当前移动到的 item 的key比要查找的 item key 大，那么就可以结束查找</p>
-<p>为了防止 key 过长导致两个key的比较时间较长，使用了 tag字段。Item 的rank由tag和key共同决定。</p>
-<p>Tag 是 hash value 的后 n-k 个bit，前k个bit作为 hashtable part</p>
-<h2 id="Identify-hotspots-and-adjust-head-pointer"><a href="#Identify-hotspots-and-adjust-head-pointer" class="headerlink" title="Identify hotspots and adjust head pointer"></a>Identify hotspots and adjust head pointer</h2><p>R的设定影响着响应延迟和热点感知的准确性，R越小，对于热点的感知就会越好，但是这也可能会导致频繁且无效的 head pointer 移动。</p>
-<p>但在当前的热点场景下，数据访问呈现非常极端的表现，所以head pointer并不会频繁移动。根据他们的实验 R 为 5 的时候表现最好。</p>
-<h2 id="Statistical-Sampling-Strategy"><a href="#Statistical-Sampling-Strategy" class="headerlink" title="Statistical Sampling Strategy"></a>Statistical Sampling Strategy</h2><p>当前 x86-64 的机器下，物理地址只有48位，但是可以通过一个 64 位的 CAS 操作进行更新，那么剩下的 16 位可以用作记录元信息。</p>
-<h3 id="Header："><a href="#Header：" class="headerlink" title="Header："></a>Header：</h3><p>active 用来控制热点标识的抽样统计的一个 flag，当 active被set之后，对ring的访问才会被记录在 total counter和相应 item 的counter中。</p>
-<h3 id="Item："><a href="#Item：" class="headerlink" title="Item："></a>Item：</h3><p>rehash 用来控制 rehash，这个后面rehash部分会讲到。</p>
-<p>occupied 是用来确保并发的正确性的，后面并发操作部分会讲到</p>
-<p>每一个线程都有一个 thread-local 变量记录他已经处理的请求数。</p>
-<p>如果第 R 个请求是一个 hot access （head pointer指向的是hot item，其他的是 cold item。对hot item的访问就是 hot access），那么不需要进行改变</p>
-<p>如果是 cold access，set active，开始计数，因为更新计数需要额外的 CAS 操作，所以我们抽样的数量和环上 item的数量保持一致。</p>
-<p>Sampling结束之后一个thread开始计算以第t个item作为head时环的平均内存访问次数Wt，最后选择一个最小Wt的item作为head。（之所以计算环的平均访问次数，是为了适应多热点）</p>
-<p>每次更新完head之后重置counter</p>
-<h2 id="Concurrent-Operations"><a href="#Concurrent-Operations" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>一方面，头部指针的移动可能与其他线程并发。因此，我们需要考虑头部指针移动和其他修改操作的并发性，以防止指针指向无效项。另一方面，当我们删除或更新项目时，我们需要检查头部指针是否指向该项目。如果是这样，我们需要正确而高效地移动头部指针</p>
-<h3 id="RCU（Read-Copy-Update）"><a href="#RCU（Read-Copy-Update）" class="headerlink" title="RCU（Read Copy Update）"></a>RCU（Read Copy Update）</h3><p>适合类似链表的数据结构</p>
-<p>读和写不需要额外的同步机制</p>
-<p>宽限期 grace period</p>
-<p>读多写少</p>
-<p>多个写者需要额外的同步策略</p>
-<h2 id="Concurrent-Operations-1"><a href="#Concurrent-Operations-1" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>read不牵扯任何并发的问题，按照之前流程读就可以</p>
-<p>insert只需要用CAS修改next address就可以</p>
-<p>Update时有个问题就是同时有两个 thread，一个在B的后面insert C，一个修改了B。如图a，B的修改使用RCU，C的插入使用CAS，这样可能导致C的失效。</p>
-<p>所以我们使用之前说过的一个 occupied bit，当对B进行 Update 之后，B的Occupied就会被set，等到A的nextaddress被更新了之后，对C的insert才会成功因为此时的B’的occupied没有被set</p>
-<p>热点转移策略修改的head Pointer，我们会set Occupied，使得在move head 时候不会被Update或修改</p>
-<p>如果是 head item发生了update，那么会先 set new item的Occupied，之后move</p>
-<p>如果head item 被删除，head item 和 next都被 Occupied</p>
-<h2 id="Lock-free-rehash"><a href="#Lock-free-rehash" class="headerlink" title="Lock-free rehash"></a>Lock-free rehash</h2><p>随着不断的 insert，chain的量也越来越大，我们需要根据 data 容量进行 rehash</p>
-<p>常见的Rehash的策略是根据 hash table 的链的平均长度触发 rehash，但这没有考虑到热点的影响</p>
-<p>新建的hash table是原来的两倍大，新建两个 rehashitem，用 rehash bit 来标记 rehash item</p>
-<p>rehash过程分为3步进行，结合上面4图进行说明，图一为哈希表，哈希值在rehash前后的变化。剩余三图为rehash三个过程。</p>
-<p>初始化(Initialization)：首先，HotRing创建一个后台rehash线程。该线程创建2倍空间的新哈希表，通过复用tag的最高一位来进行索引。因此，新表中将会有两个头指针与旧表中的一个头指针对应。HotRing根据tag范围对数据进行划分。假设tag最大值为T，tag范围为[0,T)，则两个新的头指针对应tag范围为[0,T&#x2F;2)和[T&#x2F;2,T)。同时，rahash线程创建一个rehash节点(包含两个空数据的子item节点)，子item节点分别对应两个新头指针。HotRing利用item中的Rehash标志位识别rehash节点的子item节点。</p>
-<p>分裂(Split)：在分裂阶段，rehash线程通过将rehash节点的两个子item节点插入环中完成环的分裂。如图(Split)所示，因为itemB和E是tag的范围边界，所以子item节点分别插入到itemB和E之前。完成两个插入操作后，新哈希表将激活，所有的访问都将通过新哈希表进行访问。到目前为止，已经在逻辑上将冲突环一分为二。当我们查找数据时，最多只需要扫描一半的item。</p>
-<p>删除(Deletion)：删除阶段需要做一些首尾工作，包括旧哈希表的回收。以及rehash节点的删除回收。这里需要强调，分裂阶段和删除阶段间，必须有一个RCU静默期(transition period)。该静默期保证所有从旧哈希表进入的访问均已经返回。否则，直接回收旧哈希表可能导致并发错误。</p>
-]]></content>
-      <tags>
-        <tag>Paper</tag>
-        <tag>Cache</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>In Search of an Understandable Consensus Algorithm (Extended Version)</title>
     <url>/2022/05/15/In-Search-of-an-Understandable-Consensus-Algorithm-Extended-Version/</url>
     <content><![CDATA[<h3 id="Raft特性"><a href="#Raft特性" class="headerlink" title="Raft特性"></a>Raft特性</h3><ul>
@@ -393,6 +336,63 @@
       <tags>
         <tag>Paper</tag>
         <tag>Raft</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>HotRing: A Hotspot-Aware In-Memory Key-Value Store</title>
+    <url>/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/</url>
+    <content><![CDATA[<p>Tair<br>(1) mdb是定位于cache缓存，类似于memcache的一个支持kv 内存缓存框架<br>(2) rdb是 定位于cache缓存，采用了redis的内存存储结构的一个支持kv、list等复杂数据结构的缓存框架<br>(3) ldb是一个定位于高性能存储，并可选择内嵌mdb cache加速，这种情况下cache与持久化存储的数据一致性由tair进行维护,支持kv及分级key存储，数据排序的缓存框架（leveldb）</p>
+<span id="more"></span>
+
+<p>通常情况下，一个集群中包含2台configserver及多台dataServer。</p>
+<p>两台configserver互为主备并通过维护和dataserver之间的心跳获知集群中存活可用的dataserver，构建数据在集群中的分布信息（对照表）。</p>
+<p>dataserver负责数据的存储，并按照configserver的指示完成数据的复制和迁移工作。</p>
+<p>client在启动的时候，从configserver获取数据分布信息，根据数据分布信息和相应的dataserver交互完成用户的请求。</p>
+<p>invalidserver主要负责对等集群的删除和隐藏操作，保证对等集群的数据一致。</p>
+<h2 id="Chain-Base-Index"><a href="#Chain-Base-Index" class="headerlink" title="Chain Base Index"></a>Chain Base Index</h2><p>同时，随着链上 item 数量的不断增加，对 hot item 的内存访问次数可能会线性增长</p>
+<p>所以我们需要一个热点感知的hash index</p>
+<h2 id="Hotspot-Awareness-challenges"><a href="#Hotspot-Awareness-challenges" class="headerlink" title="Hotspot-Awareness challenges"></a>Hotspot-Awareness challenges</h2><p>用一个 head 指针来指向最热的位置，head 指针能动态指向任意一个 item</p>
+<p>为了保证所有 item 的可访问性不受 head 指针的影响，使用有序环结构替换之前的链式结构，这样的环＋head Pointer就可以避免 reorder</p>
+<h2 id="Ordered-ring-structure"><a href="#Ordered-ring-structure" class="headerlink" title="Ordered-ring structure"></a>Ordered-ring structure</h2><p>环装结构可能会导致一个问题：之前的链式结构下，如果next是nil那就可以停止查找，但现在是环装结构如果 target item not found，那么可能会无限移动。</p>
+<p>所以需要知道什么时候需要结束查找：mark 第一个 item 是不合理的，因为这个 item 可能被并发修改，比如被删除了就会有问题。</p>
+<p>可以通过排序，对key进行排序，如果当前移动到的 item 的key比要查找的 item key 大，那么就可以结束查找</p>
+<p>为了防止 key 过长导致两个key的比较时间较长，使用了 tag字段。Item 的rank由tag和key共同决定。</p>
+<p>Tag 是 hash value 的后 n-k 个bit，前k个bit作为 hashtable part</p>
+<h2 id="Identify-hotspots-and-adjust-head-pointer"><a href="#Identify-hotspots-and-adjust-head-pointer" class="headerlink" title="Identify hotspots and adjust head pointer"></a>Identify hotspots and adjust head pointer</h2><p>R的设定影响着响应延迟和热点感知的准确性，R越小，对于热点的感知就会越好，但是这也可能会导致频繁且无效的 head pointer 移动。</p>
+<p>但在当前的热点场景下，数据访问呈现非常极端的表现，所以head pointer并不会频繁移动。根据他们的实验 R 为 5 的时候表现最好。</p>
+<h2 id="Statistical-Sampling-Strategy"><a href="#Statistical-Sampling-Strategy" class="headerlink" title="Statistical Sampling Strategy"></a>Statistical Sampling Strategy</h2><p>当前 x86-64 的机器下，物理地址只有48位，但是可以通过一个 64 位的 CAS 操作进行更新，那么剩下的 16 位可以用作记录元信息。</p>
+<h3 id="Header："><a href="#Header：" class="headerlink" title="Header："></a>Header：</h3><p>active 用来控制热点标识的抽样统计的一个 flag，当 active被set之后，对ring的访问才会被记录在 total counter和相应 item 的counter中。</p>
+<h3 id="Item："><a href="#Item：" class="headerlink" title="Item："></a>Item：</h3><p>rehash 用来控制 rehash，这个后面rehash部分会讲到。</p>
+<p>occupied 是用来确保并发的正确性的，后面并发操作部分会讲到</p>
+<p>每一个线程都有一个 thread-local 变量记录他已经处理的请求数。</p>
+<p>如果第 R 个请求是一个 hot access （head pointer指向的是hot item，其他的是 cold item。对hot item的访问就是 hot access），那么不需要进行改变</p>
+<p>如果是 cold access，set active，开始计数，因为更新计数需要额外的 CAS 操作，所以我们抽样的数量和环上 item的数量保持一致。</p>
+<p>Sampling结束之后一个thread开始计算以第t个item作为head时环的平均内存访问次数Wt，最后选择一个最小Wt的item作为head。（之所以计算环的平均访问次数，是为了适应多热点）</p>
+<p>每次更新完head之后重置counter</p>
+<h2 id="Concurrent-Operations"><a href="#Concurrent-Operations" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>一方面，头部指针的移动可能与其他线程并发。因此，我们需要考虑头部指针移动和其他修改操作的并发性，以防止指针指向无效项。另一方面，当我们删除或更新项目时，我们需要检查头部指针是否指向该项目。如果是这样，我们需要正确而高效地移动头部指针</p>
+<h3 id="RCU（Read-Copy-Update）"><a href="#RCU（Read-Copy-Update）" class="headerlink" title="RCU（Read Copy Update）"></a>RCU（Read Copy Update）</h3><p>适合类似链表的数据结构</p>
+<p>读和写不需要额外的同步机制</p>
+<p>宽限期 grace period</p>
+<p>读多写少</p>
+<p>多个写者需要额外的同步策略</p>
+<h2 id="Concurrent-Operations-1"><a href="#Concurrent-Operations-1" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>read不牵扯任何并发的问题，按照之前流程读就可以</p>
+<p>insert只需要用CAS修改next address就可以</p>
+<p>Update时有个问题就是同时有两个 thread，一个在B的后面insert C，一个修改了B。如图a，B的修改使用RCU，C的插入使用CAS，这样可能导致C的失效。</p>
+<p>所以我们使用之前说过的一个 occupied bit，当对B进行 Update 之后，B的Occupied就会被set，等到A的nextaddress被更新了之后，对C的insert才会成功因为此时的B’的occupied没有被set</p>
+<p>热点转移策略修改的head Pointer，我们会set Occupied，使得在move head 时候不会被Update或修改</p>
+<p>如果是 head item发生了update，那么会先 set new item的Occupied，之后move</p>
+<p>如果head item 被删除，head item 和 next都被 Occupied</p>
+<h2 id="Lock-free-rehash"><a href="#Lock-free-rehash" class="headerlink" title="Lock-free rehash"></a>Lock-free rehash</h2><p>随着不断的 insert，chain的量也越来越大，我们需要根据 data 容量进行 rehash</p>
+<p>常见的Rehash的策略是根据 hash table 的链的平均长度触发 rehash，但这没有考虑到热点的影响</p>
+<p>新建的hash table是原来的两倍大，新建两个 rehashitem，用 rehash bit 来标记 rehash item</p>
+<p>rehash过程分为3步进行，结合上面4图进行说明，图一为哈希表，哈希值在rehash前后的变化。剩余三图为rehash三个过程。</p>
+<p>初始化(Initialization)：首先，HotRing创建一个后台rehash线程。该线程创建2倍空间的新哈希表，通过复用tag的最高一位来进行索引。因此，新表中将会有两个头指针与旧表中的一个头指针对应。HotRing根据tag范围对数据进行划分。假设tag最大值为T，tag范围为[0,T)，则两个新的头指针对应tag范围为[0,T&#x2F;2)和[T&#x2F;2,T)。同时，rahash线程创建一个rehash节点(包含两个空数据的子item节点)，子item节点分别对应两个新头指针。HotRing利用item中的Rehash标志位识别rehash节点的子item节点。</p>
+<p>分裂(Split)：在分裂阶段，rehash线程通过将rehash节点的两个子item节点插入环中完成环的分裂。如图(Split)所示，因为itemB和E是tag的范围边界，所以子item节点分别插入到itemB和E之前。完成两个插入操作后，新哈希表将激活，所有的访问都将通过新哈希表进行访问。到目前为止，已经在逻辑上将冲突环一分为二。当我们查找数据时，最多只需要扫描一半的item。</p>
+<p>删除(Deletion)：删除阶段需要做一些首尾工作，包括旧哈希表的回收。以及rehash节点的删除回收。这里需要强调，分裂阶段和删除阶段间，必须有一个RCU静默期(transition period)。该静默期保证所有从旧哈希表进入的访问均已经返回。否则，直接回收旧哈希表可能导致并发错误。</p>
+]]></content>
+      <tags>
+        <tag>Paper</tag>
+        <tag>Cache</tag>
       </tags>
   </entry>
   <entry>
@@ -624,6 +624,15 @@
       </tags>
   </entry>
   <entry>
+    <title>Paper accepted by VLDB 2022</title>
+    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
+    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
+]]></content>
+      <tags>
+        <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>OCC 当前研究</title>
     <url>/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/</url>
     <content><![CDATA[<h3 id="内存数据库"><a href="#内存数据库" class="headerlink" title="内存数据库"></a>内存数据库</h3><ul>
@@ -796,21 +805,16 @@
       </tags>
   </entry>
   <entry>
-    <title>Paper accepted by VLDB 2022</title>
-    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
-    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
-]]></content>
-      <tags>
-        <tag>Publication</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Postgres 现存问题</title>
     <url>/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/</url>
     <content><![CDATA[<p>原文见 <a href="https://rbranson.medium.com/10-things-i-hate-about-postgresql-20dbab8c2791">10 Things I Hate About PostgreSQL</a></p>
 <ol>
-<li>灾难性的 XID wrapround<br>XID 是一个32位无符号整数，也就是 XID 的范围是 0到2^32-1；那么超过了 2^32-1的事务怎么办呢？其实 XID 是一个环，超过了 2^32-1 之后又会从头开始分配。需要通过 vacuum 机制来不断的 frozen 元组来回收 XID。<span id="more"></span>
-<figure class="highlight c"><table><tr><td class="code"><pre><span class="line"><span class="comment">// 无效事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> InvalidTransactionId    ((TransactionId) 0)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// bootstrap 事务号，在数据库初始化过程（BKI执行）中使用</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> BootstrapTransactionId    ((TransactionId) 1)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// frozen 事务号用于表示非常陈旧的元组，它们比所有正常事务号都要早（也就是可见）</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FrozenTransactionId      ((TransactionId) 2)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 第一个正常事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FirstNormalTransactionId  ((TransactionId) 3)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 把 FullTransactionId 的低32位作为无符号整数生成 xid</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> XidFromFullTransactionId(x)    ((uint32) (x).value)</span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">FullTransactionIdAdvance</span><span class="params">(FullTransactionId *dest)</span></span><br><span class="line">&#123;</span><br><span class="line">dest-&gt;value++;</span><br><span class="line"><span class="keyword">while</span> (XidFromFullTransactionId(*dest) &lt; FirstNormalTransactionId)</span><br><span class="line">    dest-&gt;value++;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">FullTransactionId <span class="title function_">GetNewTransactionId</span><span class="params">(<span class="type">bool</span> isSubXact)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">full_xid = ShmemVariableCache-&gt;nextFullXid;</span><br><span class="line">xid = XidFromFullTransactionId(full_xid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">FullTransactionIdAdvance(&amp;ShmemVariableCache-&gt;nextFullXid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line"><span class="keyword">return</span> full_xid;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">AssignTransactionId</span><span class="params">(TransactionState s)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">s-&gt;fullTransactionId = GetNewTransactionId(isSubXact);</span><br><span class="line"><span class="keyword">if</span> (!isSubXact)</span><br><span class="line">    XactTopFullTransactionId = s-&gt;fullTransactionId;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">TransactionId <span class="title function_">GetTopTransactionId</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="keyword">if</span> (!FullTransactionIdIsValid(XactTopFullTransactionId))</span><br><span class="line">    AssignTransactionId(&amp;TopTransactionStateData);</span><br><span class="line"><span class="keyword">return</span> XidFromFullTransactionId(XactTopFullTransactionId);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li>
+<li>灾难性的 XID wrapround<br>XID 是一个32位无符号整数，也就是 XID 的范围是 0到2^32-1；那么超过了 2^32-1的事务怎么办呢？其实 XID 是一个环，超过了 2^32-1 之后又会从头开始分配。需要通过 vacuum 机制来不断的 frozen 元组来回收 XID。</li>
+</ol>
+<span id="more"></span>
+
+   <figure class="highlight c"><table><tr><td class="code"><pre><span class="line"><span class="comment">// 无效事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> InvalidTransactionId    ((TransactionId) 0)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// bootstrap 事务号，在数据库初始化过程（BKI执行）中使用</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> BootstrapTransactionId    ((TransactionId) 1)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// frozen 事务号用于表示非常陈旧的元组，它们比所有正常事务号都要早（也就是可见）</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FrozenTransactionId      ((TransactionId) 2)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 第一个正常事务号</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> FirstNormalTransactionId  ((TransactionId) 3)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 把 FullTransactionId 的低32位作为无符号整数生成 xid</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> XidFromFullTransactionId(x)    ((uint32) (x).value)</span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">FullTransactionIdAdvance</span><span class="params">(FullTransactionId *dest)</span></span><br><span class="line">&#123;</span><br><span class="line">dest-&gt;value++;</span><br><span class="line"><span class="keyword">while</span> (XidFromFullTransactionId(*dest) &lt; FirstNormalTransactionId)</span><br><span class="line">    dest-&gt;value++;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">FullTransactionId <span class="title function_">GetNewTransactionId</span><span class="params">(<span class="type">bool</span> isSubXact)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">full_xid = ShmemVariableCache-&gt;nextFullXid;</span><br><span class="line">xid = XidFromFullTransactionId(full_xid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">FullTransactionIdAdvance(&amp;ShmemVariableCache-&gt;nextFullXid);</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line"><span class="keyword">return</span> full_xid;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">AssignTransactionId</span><span class="params">(TransactionState s)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">s-&gt;fullTransactionId = GetNewTransactionId(isSubXact);</span><br><span class="line"><span class="keyword">if</span> (!isSubXact)</span><br><span class="line">    XactTopFullTransactionId = s-&gt;fullTransactionId;</span><br><span class="line"><span class="comment">/** ··· **/</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">TransactionId <span class="title function_">GetTopTransactionId</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="keyword">if</span> (!FullTransactionIdIsValid(XactTopFullTransactionId))</span><br><span class="line">    AssignTransactionId(&amp;TopTransactionStateData);</span><br><span class="line"><span class="keyword">return</span> XidFromFullTransactionId(XactTopFullTransactionId);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ol>
 <li>Failover 后数据丢失的可能性</li>
 <li>低效的 replication 机制</li>
 <li>MVCC 带来的 GC 问题（vacuum）</li>
