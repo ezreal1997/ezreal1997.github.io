@@ -1,6 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>[SIGMOD 2021]FoundationDB: A Distributed Unbundled Transactional Key Value Store</title>
+    <url>/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/</url>
+    <content><![CDATA[<p>FoundationDB 和传统的 key value store 相比，一方面在存储层实现的是强一致 ACID，另一方面通过可扩展的方式支持更多数据模型，并发控制采用 OCC 同时不支持超过 5s 的长事务。</p>
+<span id="more"></span>
+
+<h2 id="整体架构"><a href="#整体架构" class="headerlink" title="整体架构"></a>整体架构</h2><p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/arch.png" alt="架构"></p>
+<p>FoundationDB 架构的核心是<strong>松耦合</strong>，整体可以分为 Control Plane 和 Data Plane 两个模块。</p>
+<ul>
+<li>Control Plane 负责系统的管理和监控，使用 Active Disk Paxos 保证高可用性，并选举出单个的 Cluster Controller，controller 会创建另外几个单实例进程：Data Distributor，Rate Keeper，Sequencer<ul>
+<li>Sequencer 负责给事务分发 read version 和 commit version</li>
+<li>Data Distributor 负责监控 Storage Server 集群状态以及负载均衡</li>
+<li>Rate Keeper 负责流控，避免系统 overload</li>
+</ul>
+</li>
+<li>Data Plane 负责用户和系统数据的存储，其中 Transaction System 负责处理写请求，Storage System 负责处理读请求，不同系统之间完全解耦，同时可以各自独立扩展<ul>
+<li>TS 层负责事务处理，由 Sequencer 创建 Proxy &#x2F; Resolver，整个 TS 层是无状态的，便于发生 failure 时，快速整体重启</li>
+<li>LS 层负责 WAL 的存储，按照 key range 做分片存储，且每个分片有多个副本</li>
+<li>SS 层负责实际数据的存储，和 LS 的分片对应，每个分片有自己的 WAL 日志，底层目前使用的是 SQLite，后续会考虑Rocksdb</li>
+</ul>
+</li>
+</ul>
+<h2 id="事务处理"><a href="#事务处理" class="headerlink" title="事务处理"></a>事务处理</h2><p>FoundationDB 利用 OCC + MVCC 的策略来实现串行化事务。</p>
+<ul>
+<li>读请求<br>client 连接 Proxy，获取读时间戳，Proxy 向 Sequencer 获取 read version 并返回 client，client 利用 read version 从 storage server 直接读取目标版本数据，在本地进行物化并缓存</li>
+<li>写请求<br>事务提交时带着 read set + write set 发给 Proxy，Proxy 首先向 Sequencer 获取 commit version，然后发送给 Resolver做冲突检测（Resovler 也是根据 key range 分片启动多个实例，这样可以并发做冲突检测）</li>
+</ul>
+<p>FDB 实现的是可串行化事务，commit version 的顺序就是事务提交顺序，因此可以认为事务需要在 commit 点瞬时完成，冲突检测就是判断在 (read version, commit version) 之间，是否并发事务写入了冲突的数据。其中 Resolver 的冲突检测算法如下图所示：</p>
+<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/conflict_detect.png" alt="冲突检测算法"></p>
+<p>为了提高冲突检测效率，Resolver 使用 skiplist 维护数据的 LastCommit 信息，即修改的 key range -&gt; commit version 的映射，记录 key range 最近一次的 commit version，便于找到对某个 key&#x2F;key-range 最近一次 commit version 是否在当前事务的 (read version, commit version)之间，不冲突即用当前事务的 commit version 更新 LastCommit。</p>
+<p>这里有一个问题，由于是多个 Resovler 并发检测冲突，可能一些 Resolver 局部认为是无冲突的，因此更新了自己维护的LastCommit 结构，导致后续不应该失败的事务发生冲突(false-positive）。FDB认为这不是大问题，首先它面向多租户应用，冲突较少，一般事务都会落入一个 Resovler。此外即使失败后重试，新的事务的 read version 增长后，超过这个伪提交事务的 commit version 即可。</p>
+<p>除了 read-write 事务，还有 read-only 事务，只获取 read version 从 SS 读取数据，然后 client 直接提交就可以，等同于在 read version 瞬时完成，不需要检测冲突。 此外在 read-write 事务中还允许进行 snapshot read，这种 read 不放入 read set 中，不做冲突检测。</p>
+<p>所有 Resovler 返回成功时，Proxy 认为事务可以提交，向 LogServer 发送 WAL 进行多副本同步复制，日志落盘后 Proxy 认为事务提交成功，返回给 client。同时 Storage Server 异步的从 LS 获取 log entry 并 apply，即使log entry 还没有落盘也会 apply，FDB 通过采用这种激进的物化策略来保证 data 和 log 之间的低延迟。</p>
+<p>可串行化的并发控制使得 log entry 之间形成了严格的顺序，大大简化了 log 管理的逻辑，可以用 version 来表示 LSN，针对每个 key，它所对应的实际是一个有序的 log entry 队列，依次 apply 就可以物化成最新版本。</p>
+<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/logsync.png" alt="Proxy 写 log 流程"></p>
+<p>Proxy 本地有缓存一份 key range -&gt; SS 的映射关系，这样就可以知道要写入哪些 SS 和对应的 LS。例如上图中，LS1 + LS4 是要写入的 LS，由于是3副本，需要再额外写一个 LS，其余的 LS 也要发送，但只传递 Log Header，其中包含的最主要信息是当前的 LSN 和 Proxy 上的 KCV，即本 Proxy 已知的最大已提交事务，LS 收到后会更新自己本地的 KCV，这个 KCV 在 recovery 时会使用。</p>
+<p>LS 上的 WAL -&gt; SS 和 apply redo 并不在 commit 流程中，是异步持续完成，因此可以说 FDB 也遵循了 ‘log is data’ 的思想。这种方式 client 做 read 一般可以读到目标 version 的数据，如果不行就等待或者向其他副本请求，都不行的话，可以超时后重试。<br>由于是异步 apply，可以做 batching，将一批更新缓存在 SS 上，批量刷盘提高 IO 效率。但这里也有个问题，由于 LS 中在内存中（未提交）的 entry 也可能被apply，因此 SS 是有脏数据的，在 recovery 时要 rollback。</p>
+<h2 id="数据可靠性"><a href="#数据可靠性" class="headerlink" title="数据可靠性"></a>数据可靠性</h2><p>FDB 由于 redo log apply 是在后台持续进行的，因此本质上它将 redo apply 从 recovery 中解耦出来，等于持续在 checkpointing，在 recovery 期间不需要做 redo apply，只是确认当前的 log 序列需要恢复到哪个位置即可，后续基于 log -&gt; data 的过程仍然是异步，以此保证了 recovery 的速度。</p>
+<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/recovery.png" alt="FDB Recovery"></p>
+<p>发现 failure 后，旧的 Sequencer 退出，新 Sequencer 启动，并从 Coordinator 获取老的 TS 的配置信息，包括旧的 LS 的位置等，同时给 Coordinator 加个全局锁，避免并发 recovery，然后关闭老的 LS，禁止接收新的 log 写入，开始恢复，恢复完成后启动 TS 接收用户请求。</p>
+<p>Proxy 和 Resolver 都是 stateless 的，直接重启即可，只有 LogServer 有 log 信息。由于在日常提交写日志时，Proxy 会把本地记录的 KCV 广播给所有 LS，LS 中就记录了自己见过的最大的 KCV。选取所有 LS 中 KCV 的最大值，在这个值之前的事务，其日志已经完全复制并落盘，且已告知 Proxy，可以作为上一个 epoch 的终点，称为 PEV（previous epoch’s end version）。</p>
+<p>同时每个 LogServer 都记录了本地已持久化的 version (DV)，选取所有 DV 中的最小值，作为 Recovery Version(RV)，在 [PEV, RV] 之间的日志，已持久化且不在内存中，但不确定是否已提交（因为 Proxy 没有该信息，可能崩溃的那个没持久化），因此这部分需要进行恢复，而大于 RV 的 log entry，肯定没有多副本都持久化，因此不可能提交，这部分要undo。</p>
+<h2 id="优化"><a href="#优化" class="headerlink" title="优化"></a>优化</h2><ol>
+<li>Transaction batching<br>在 Proxy 上为了减少与 Sequencer&#x2F;LS 的交互成本，可以把不冲突的并发事务合并，获取同一个 commit version，并一起下发到 LogServer，相当于 group commit。<br>这个策略是可以自适应的，在系统负载不大时，为了减少延迟，可以减小 batch 大小，当系统重负载时，为了保证吞吐则可以加大 batch。</li>
+<li>Atomic operations<br>对于一些只写不读的操作，其相互之间可以不做冲突检测，直接获取提交时间戳就可以，这对于某些 counter 类型的操作会提高效率，因为避免了从 storage 的一次读，也避免了 resolve confilct。</li>
+</ol>
+]]></content>
+      <tags>
+        <tag>FoundationDB</tag>
+        <tag>Paper</tag>
+        <tag>OCC</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Centiman: Elastic, High Performance Optimistic Concurrency Control by Watermarking</title>
     <url>/2022/05/15/Centiman-Elastic-High-Performance-Optimistic-Concurrency-Control-by-Watermarking/</url>
     <content><![CDATA[<p>ACID over KVS</p>
@@ -73,59 +126,6 @@
       </tags>
   </entry>
   <entry>
-    <title>FoundationDB: A Distributed Unbundled Transactional Key Value Store</title>
-    <url>/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/</url>
-    <content><![CDATA[<p>FoundationDB 和传统的 key value store 相比，一方面在存储层实现的是强一致 ACID，另一方面通过可扩展的方式支持更多数据模型，并发控制采用 OCC 同时不支持超过 5s 的长事务。</p>
-<span id="more"></span>
-
-<h2 id="整体架构"><a href="#整体架构" class="headerlink" title="整体架构"></a>整体架构</h2><p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/arch.png" alt="架构"></p>
-<p>FoundationDB 架构的核心是<strong>松耦合</strong>，整体可以分为 Control Plane 和 Data Plane 两个模块。</p>
-<ul>
-<li>Control Plane 负责系统的管理和监控，使用 Active Disk Paxos 保证高可用性，并选举出单个的 Cluster Controller，controller 会创建另外几个单实例进程：Data Distributor，Rate Keeper，Sequencer<ul>
-<li>Sequencer 负责给事务分发 read version 和 commit version</li>
-<li>Data Distributor 负责监控 Storage Server 集群状态以及负载均衡</li>
-<li>Rate Keeper 负责流控，避免系统 overload</li>
-</ul>
-</li>
-<li>Data Plane 负责用户和系统数据的存储，其中 Transaction System 负责处理写请求，Storage System 负责处理读请求，不同系统之间完全解耦，同时可以各自独立扩展<ul>
-<li>TS 层负责事务处理，由 Sequencer 创建 Proxy &#x2F; Resolver，整个 TS 层是无状态的，便于发生 failure 时，快速整体重启</li>
-<li>LS 层负责 WAL 的存储，按照 key range 做分片存储，且每个分片有多个副本</li>
-<li>SS 层负责实际数据的存储，和 LS 的分片对应，每个分片有自己的 WAL 日志，底层目前使用的是 SQLite，后续会考虑Rocksdb</li>
-</ul>
-</li>
-</ul>
-<h2 id="事务处理"><a href="#事务处理" class="headerlink" title="事务处理"></a>事务处理</h2><p>FoundationDB 利用 OCC + MVCC 的策略来实现串行化事务。</p>
-<ul>
-<li>读请求<br>client 连接 Proxy，获取读时间戳，Proxy 向 Sequencer 获取 read version 并返回 client，client 利用 read version 从 storage server 直接读取目标版本数据，在本地进行物化并缓存</li>
-<li>写请求<br>事务提交时带着 read set + write set 发给 Proxy，Proxy 首先向 Sequencer 获取 commit version，然后发送给 Resolver做冲突检测（Resovler 也是根据 key range 分片启动多个实例，这样可以并发做冲突检测）</li>
-</ul>
-<p>FDB 实现的是可串行化事务，commit version 的顺序就是事务提交顺序，因此可以认为事务需要在 commit 点瞬时完成，冲突检测就是判断在 (read version, commit version) 之间，是否并发事务写入了冲突的数据。其中 Resolver 的冲突检测算法如下图所示：</p>
-<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/conflict_detect.png" alt="冲突检测算法"></p>
-<p>为了提高冲突检测效率，Resolver 使用 skiplist 维护数据的 LastCommit 信息，即修改的 key range -&gt; commit version 的映射，记录 key range 最近一次的 commit version，便于找到对某个 key&#x2F;key-range 最近一次 commit version 是否在当前事务的 (read version, commit version)之间，不冲突即用当前事务的 commit version 更新 LastCommit。</p>
-<p>这里有一个问题，由于是多个 Resovler 并发检测冲突，可能一些 Resolver 局部认为是无冲突的，因此更新了自己维护的LastCommit 结构，导致后续不应该失败的事务发生冲突(false-positive）。FDB认为这不是大问题，首先它面向多租户应用，冲突较少，一般事务都会落入一个 Resovler。此外即使失败后重试，新的事务的 read version 增长后，超过这个伪提交事务的 commit version 即可。</p>
-<p>除了 read-write 事务，还有 read-only 事务，只获取 read version 从 SS 读取数据，然后 client 直接提交就可以，等同于在 read version 瞬时完成，不需要检测冲突。 此外在 read-write 事务中还允许进行 snapshot read，这种 read 不放入 read set 中，不做冲突检测。</p>
-<p>所有 Resovler 返回成功时，Proxy 认为事务可以提交，向 LogServer 发送 WAL 进行多副本同步复制，日志落盘后 Proxy 认为事务提交成功，返回给 client。同时 Storage Server 异步的从 LS 获取 log entry 并 apply，即使log entry 还没有落盘也会 apply，FDB 通过采用这种激进的物化策略来保证 data 和 log 之间的低延迟。</p>
-<p>可串行化的并发控制使得 log entry 之间形成了严格的顺序，大大简化了 log 管理的逻辑，可以用 version 来表示 LSN，针对每个 key，它所对应的实际是一个有序的 log entry 队列，依次 apply 就可以物化成最新版本。</p>
-<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/logsync.png" alt="Proxy 写 log 流程"></p>
-<p>Proxy 本地有缓存一份 key range -&gt; SS 的映射关系，这样就可以知道要写入哪些 SS 和对应的 LS。例如上图中，LS1 + LS4 是要写入的 LS，由于是3副本，需要再额外写一个 LS，其余的 LS 也要发送，但只传递 Log Header，其中包含的最主要信息是当前的 LSN 和 Proxy 上的 KCV，即本 Proxy 已知的最大已提交事务，LS 收到后会更新自己本地的 KCV，这个 KCV 在 recovery 时会使用。</p>
-<p>LS 上的 WAL -&gt; SS 和 apply redo 并不在 commit 流程中，是异步持续完成，因此可以说 FDB 也遵循了 ‘log is data’ 的思想。这种方式 client 做 read 一般可以读到目标 version 的数据，如果不行就等待或者向其他副本请求，都不行的话，可以超时后重试。<br>由于是异步 apply，可以做 batching，将一批更新缓存在 SS 上，批量刷盘提高 IO 效率。但这里也有个问题，由于 LS 中在内存中（未提交）的 entry 也可能被apply，因此 SS 是有脏数据的，在 recovery 时要 rollback。</p>
-<h2 id="数据可靠性"><a href="#数据可靠性" class="headerlink" title="数据可靠性"></a>数据可靠性</h2><p>FDB 由于 redo log apply 是在后台持续进行的，因此本质上它将 redo apply 从 recovery 中解耦出来，等于持续在 checkpointing，在 recovery 期间不需要做 redo apply，只是确认当前的 log 序列需要恢复到哪个位置即可，后续基于 log -&gt; data 的过程仍然是异步，以此保证了 recovery 的速度。</p>
-<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/recovery.png" alt="FDB Recovery"></p>
-<p>发现 failure 后，旧的 Sequencer 退出，新 Sequencer 启动，并从 Coordinator 获取老的 TS 的配置信息，包括旧的 LS 的位置等，同时给 Coordinator 加个全局锁，避免并发 recovery，然后关闭老的 LS，禁止接收新的 log 写入，开始恢复，恢复完成后启动 TS 接收用户请求。</p>
-<p>Proxy 和 Resolver 都是 stateless 的，直接重启即可，只有 LogServer 有 log 信息。由于在日常提交写日志时，Proxy 会把本地记录的 KCV 广播给所有 LS，LS 中就记录了自己见过的最大的 KCV。选取所有 LS 中 KCV 的最大值，在这个值之前的事务，其日志已经完全复制并落盘，且已告知 Proxy，可以作为上一个 epoch 的终点，称为 PEV（previous epoch’s end version）。</p>
-<p>同时每个 LogServer 都记录了本地已持久化的 version (DV)，选取所有 DV 中的最小值，作为 Recovery Version(RV)，在 [PEV, RV] 之间的日志，已持久化且不在内存中，但不确定是否已提交（因为 Proxy 没有该信息，可能崩溃的那个没持久化），因此这部分需要进行恢复，而大于 RV 的 log entry，肯定没有多副本都持久化，因此不可能提交，这部分要undo。</p>
-<h2 id="优化"><a href="#优化" class="headerlink" title="优化"></a>优化</h2><ol>
-<li>Transaction batching<br>在 Proxy 上为了减少与 Sequencer&#x2F;LS 的交互成本，可以把不冲突的并发事务合并，获取同一个 commit version，并一起下发到 LogServer，相当于 group commit。<br>这个策略是可以自适应的，在系统负载不大时，为了减少延迟，可以减小 batch 大小，当系统重负载时，为了保证吞吐则可以加大 batch。</li>
-<li>Atomic operations<br>对于一些只写不读的操作，其相互之间可以不做冲突检测，直接获取提交时间戳就可以，这对于某些 counter 类型的操作会提高效率，因为避免了从 storage 的一次读，也避免了 resolve confilct。</li>
-</ol>
-]]></content>
-      <tags>
-        <tag>OCC</tag>
-        <tag>FoundationDB</tag>
-        <tag>Paper</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>FoundationDB Record Layer: A Multi-Tenant Structured Datastore</title>
     <url>/2022/06/13/FoundationDB-Record-Layer-A-Multi-Tenant-Structured-Datastore/</url>
     <content><![CDATA[<p>FoundationDB Record Layer 是建立在 FoundationDB 之上的类关系模型的结构化数据层，支持多租户，以 library 方式提供给应用，目前没有实现 SQL。</p>
@@ -151,9 +151,9 @@
 <p>这两者类似一个拦截器，拦截每一个 record 的变化信息，生成相应的 key-value。只要经过 key expression 和 index maintanance 生成的 key-value，在 FoundationDB Record Layer 里都被称为“索引”。</p>
 ]]></content>
       <tags>
-        <tag>OCC</tag>
         <tag>FoundationDB</tag>
         <tag>Paper</tag>
+        <tag>OCC</tag>
       </tags>
   </entry>
   <entry>
@@ -986,6 +986,25 @@
       </tags>
   </entry>
   <entry>
+    <title>bug of Golang httputil.ReverseProxy</title>
+    <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
+    <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
+<span id="more"></span>
+
+<p>I construct a broken server. The server will always send 100-continue and an incorrect header to proxy. In ReverseProxy，transport.RoundTrip(outreq) will receive an error and don’t keep the connection to client. After the connection is closed, (*conn).finalFlush will assign (*conn).bufw &#x3D; nil. At the same time, writeLoop probably doesn’t exit and may writeBody. The body here is an *expectContinueReader. When writeLoop first reads it, it writes 100-continue to client. But (*expectContinueReader).resp.conn.bufw &#x3D;&#x3D; nil, so it leads to panic. If writeBody happens before assign，it leads to data race.</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;io&quot;</span></span><br><span class="line">    <span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http/httputil&quot;</span></span><br><span class="line">    <span class="string">&quot;net/url&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> zeroReader <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(zeroReader)</span></span> Read(p []<span class="type">byte</span>) (<span class="type">int</span>, <span class="type">error</span>) &#123; <span class="keyword">return</span> <span class="built_in">len</span>(p), <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> infinite io.Reader = &amp;zeroReader&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">brokenBackend</span><span class="params">()</span></span> &#123;</span><br><span class="line">    http.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        conn, bfw, err := w.(http.Hijacker).Hijack()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;hijack failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// Tell client net/http.(*persistConn).writeLoop() to continue writeBody.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;HTTP/1.1 100 Continue\r\n\r\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Send client a wrong format header to make client net/http.(*persistConn).readLoop() readResponse failed.</span></span><br><span class="line">        <span class="comment">// Then client net/http.(*persistConn).roundTrip() will return an error and probably doesn&#x27;t wait</span></span><br><span class="line">        <span class="comment">// net/http.(*persistConn).writeLoop() to exit.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;BROKEN-HEADER\r\n\r\n&quot;</span>)</span><br><span class="line">        bfw.Flush()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Keep this connection for 1s so that the client doesn&#x27;t think the connection is down immediately.</span></span><br><span class="line">        &lt;-time.AfterFunc(time.Second, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; conn.Close() &#125;).C</span><br><span class="line">    &#125;)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8081&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Proxy just forwards requests to the broken backend.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">proxy</span><span class="params">()</span></span> &#123;</span><br><span class="line">    target, err := url.Parse(<span class="string">&quot;http://localhost:8081&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;parse target url failed: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">    p := httputil.NewSingleHostReverseProxy(target)</span><br><span class="line">    p.ErrorLog = log.New(ioutil.Discard, <span class="string">&quot;&quot;</span>, <span class="number">0</span>)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, p)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> brokenBackend()</span><br><span class="line">    <span class="keyword">go</span> proxy()</span><br><span class="line">    <span class="comment">// Wait backend and proxy server to start</span></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> <span class="keyword">range</span> time.Tick(time.Millisecond * <span class="number">100</span>) &#123;</span><br><span class="line">        req, err := http.NewRequest(<span class="string">&quot;PUT&quot;</span>, <span class="string">&quot;http://localhost:8080&quot;</span>, io.LimitReader(infinite, <span class="number">65536</span>))</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;create request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        req.Header.Set(<span class="string">&quot;Expect&quot;</span>, <span class="string">&quot;100-continue&quot;</span>)</span><br><span class="line">        _, err = http.DefaultClient.Do(req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;do request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+]]></content>
+      <tags>
+        <tag>Golang</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Hello World</title>
+    <url>/2022/04/10/hello-world/</url>
+    <content><![CDATA[<p>Hello World!</p>
+]]></content>
+  </entry>
+  <entry>
     <title>WiscKey: Separating Keys from Values in SSD-conscious Storage</title>
     <url>/2022/05/15/WiscKey-Separating-Keys-from-Values-in-SSD-conscious-Storage/</url>
     <content><![CDATA[<h3 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h3><p>这篇 Paper 将的都是如何解决 LSM-Tree 的写放大的问题。Wisckey的基本思路其实很简单，使用的方法就是将Key和Value分开保存的方式，对于读取Value时造成的随机读写问题，Wisckey则认为这个在SSD上的问题能得到缓解，也使用了预取，并行读等的一些优化方式。在SOSP‘17上面的 PebblesDB 则对 LSM-Tree 的结构进行了比较好的改进，个人认为这个是一种更加好的方式。WiscKey的设计目标是为随机性能比较好的SSD优化的，因为它的设计会导致比较多的随机读，它在测试数据中实现了,</p>
@@ -1022,24 +1041,5 @@
         <tag>Paper</tag>
         <tag>LSM</tag>
       </tags>
-  </entry>
-  <entry>
-    <title>bug of Golang httputil.ReverseProxy</title>
-    <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
-    <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
-<span id="more"></span>
-
-<p>I construct a broken server. The server will always send 100-continue and an incorrect header to proxy. In ReverseProxy，transport.RoundTrip(outreq) will receive an error and don’t keep the connection to client. After the connection is closed, (*conn).finalFlush will assign (*conn).bufw &#x3D; nil. At the same time, writeLoop probably doesn’t exit and may writeBody. The body here is an *expectContinueReader. When writeLoop first reads it, it writes 100-continue to client. But (*expectContinueReader).resp.conn.bufw &#x3D;&#x3D; nil, so it leads to panic. If writeBody happens before assign，it leads to data race.</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;io&quot;</span></span><br><span class="line">    <span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http/httputil&quot;</span></span><br><span class="line">    <span class="string">&quot;net/url&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> zeroReader <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(zeroReader)</span></span> Read(p []<span class="type">byte</span>) (<span class="type">int</span>, <span class="type">error</span>) &#123; <span class="keyword">return</span> <span class="built_in">len</span>(p), <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> infinite io.Reader = &amp;zeroReader&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">brokenBackend</span><span class="params">()</span></span> &#123;</span><br><span class="line">    http.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        conn, bfw, err := w.(http.Hijacker).Hijack()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;hijack failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// Tell client net/http.(*persistConn).writeLoop() to continue writeBody.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;HTTP/1.1 100 Continue\r\n\r\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Send client a wrong format header to make client net/http.(*persistConn).readLoop() readResponse failed.</span></span><br><span class="line">        <span class="comment">// Then client net/http.(*persistConn).roundTrip() will return an error and probably doesn&#x27;t wait</span></span><br><span class="line">        <span class="comment">// net/http.(*persistConn).writeLoop() to exit.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;BROKEN-HEADER\r\n\r\n&quot;</span>)</span><br><span class="line">        bfw.Flush()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Keep this connection for 1s so that the client doesn&#x27;t think the connection is down immediately.</span></span><br><span class="line">        &lt;-time.AfterFunc(time.Second, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; conn.Close() &#125;).C</span><br><span class="line">    &#125;)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8081&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Proxy just forwards requests to the broken backend.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">proxy</span><span class="params">()</span></span> &#123;</span><br><span class="line">    target, err := url.Parse(<span class="string">&quot;http://localhost:8081&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;parse target url failed: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">    p := httputil.NewSingleHostReverseProxy(target)</span><br><span class="line">    p.ErrorLog = log.New(ioutil.Discard, <span class="string">&quot;&quot;</span>, <span class="number">0</span>)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, p)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> brokenBackend()</span><br><span class="line">    <span class="keyword">go</span> proxy()</span><br><span class="line">    <span class="comment">// Wait backend and proxy server to start</span></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> <span class="keyword">range</span> time.Tick(time.Millisecond * <span class="number">100</span>) &#123;</span><br><span class="line">        req, err := http.NewRequest(<span class="string">&quot;PUT&quot;</span>, <span class="string">&quot;http://localhost:8080&quot;</span>, io.LimitReader(infinite, <span class="number">65536</span>))</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;create request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        req.Header.Set(<span class="string">&quot;Expect&quot;</span>, <span class="string">&quot;100-continue&quot;</span>)</span><br><span class="line">        _, err = http.DefaultClient.Do(req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;do request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-]]></content>
-      <tags>
-        <tag>Golang</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Hello World</title>
-    <url>/2022/04/10/hello-world/</url>
-    <content><![CDATA[<p>Hello World!</p>
-]]></content>
   </entry>
 </search>
