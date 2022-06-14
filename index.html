@@ -183,6 +183,72 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="ezreal">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ezreal's blog">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/" class="post-title-link" itemprop="url">[SIGMOD 2021] Nova-LSM: A Distributed, Component-based LSM-tree Key-value Store</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-06-14 09:47:27 / Modified: 16:30:07" itemprop="dateCreated datePublished" datetime="2022-06-14T09:47:27+08:00">2022-06-14</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <p>Nova-LSM 是一个存算分离的 LSM key-value store，计算和存储分为不同的组件并通过 RDMA 通信。整体包含 LSM-tree Component (LTC), Logging Component (LogC) 和 Storage Component (StoC) 这三个模块，LTC 和 LogC 都通过 StoC 存储数据。</p>
+          <!--noindex-->
+            <div class="post-button">
+              <a class="btn" href="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/#more" rel="contents">
+                Read more &raquo;
+              </a>
+            </div>
+          <!--/noindex-->
+        
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="http://example.com/2022/06/13/FoundationDB-Record-Layer-A-Multi-Tenant-Structured-Datastore/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -263,7 +329,7 @@
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
           
-            <a href="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/" class="post-title-link" itemprop="url">[SIGMOD 2021]FoundationDB: A Distributed Unbundled Transactional Key Value Store</a>
+            <a href="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/" class="post-title-link" itemprop="url">[SIGMOD 2021] FoundationDB: A Distributed Unbundled Transactional Key Value Store</a>
         </h2>
 
         <div class="post-meta">
@@ -280,7 +346,7 @@
                   <i class="far fa-calendar-check"></i>
                 </span>
                 <span class="post-meta-item-text">Edited on</span>
-                <time title="Modified: 2022-06-14 09:44:54" itemprop="dateModified" datetime="2022-06-14T09:44:54+08:00">2022-06-14</time>
+                <time title="Modified: 2022-06-14 09:46:50" itemprop="dateModified" datetime="2022-06-14T09:46:50+08:00">2022-06-14</time>
               </span>
 
           
@@ -794,79 +860,10 @@
   
   
 
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="http://example.com/2022/05/15/Varint/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="ezreal">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="ezreal's blog">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2022/05/15/Varint/" class="post-title-link" itemprop="url">Varint</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">Posted on</span>
-              
-
-              <time title="Created: 2022-05-15 20:41:48 / Modified: 20:50:36" itemprop="dateCreated datePublished" datetime="2022-05-15T20:41:48+08:00">2022-05-15</time>
-            </span>
-
-          
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <h3 id="Varint-编码原理"><a href="#Varint-编码原理" class="headerlink" title="Varint 编码原理"></a>Varint 编码原理</h3><p>除了最后一个字节外，varint 编码中的每个字节都设置了最高有效位 (most significant bit - msb)</p>
-<p>msb 为 1 则表明后面的字节还是属于当前数据的, 如果是 0 那么这是当前数据的最后一个字节数据。</p>
-<p>每个字节的低7位用于以7位为一组存储数字的二进制补码表示，最低有效组在前，或者叫最低有效字节在前。这表明varint编码后数据的字节是按照<strong>小端序</strong>排列的。</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">十进制: 123456</span><br><span class="line">二进制补码: 111 1000100 1000000</span><br><span class="line">Varint 编码: 11000000 11000100 0000111</span><br></pre></td></tr></table></figure>
-          <!--noindex-->
-            <div class="post-button">
-              <a class="btn" href="/2022/05/15/Varint/#more" rel="contents">
-                Read more &raquo;
-              </a>
-            </div>
-          <!--/noindex-->
-        
-      
-    </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
-
 
   
   <nav class="pagination">
-    <span class="page-number current">1</span><a class="page-number" href="/page/2/">2</a><a class="extend next" rel="next" href="/page/2/"><i class="fa fa-angle-right" aria-label="Next page"></i></a>
+    <span class="page-number current">1</span><a class="page-number" href="/page/2/">2</a><a class="page-number" href="/page/3/">3</a><a class="extend next" rel="next" href="/page/2/"><i class="fa fa-angle-right" aria-label="Next page"></i></a>
   </nav>
 
 
@@ -932,7 +929,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">20</span>
+          <span class="site-state-item-count">21</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
