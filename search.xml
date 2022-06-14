@@ -157,50 +157,6 @@
       </tags>
   </entry>
   <entry>
-    <title>[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage</title>
-    <url>/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/</url>
-    <content><![CDATA[<h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。</p>
-<span id="more"></span>
-
-<h3 id="AlloyDB-架构"><a href="#AlloyDB-架构" class="headerlink" title="AlloyDB 架构"></a>AlloyDB 架构</h3><p>AlloyDB 存储层是一个分布式系统，由三个主要部分组成：</p>
-<ul>
-<li>一种低延迟的 regional log storage service，用于高速的 WAL 写入</li>
-<li>负责处理 WAL 并生成 “Materialized(物化)” 数据库页面的 log processing service (LPS)</li>
-<li>负责对数据进行容错、分片的 regional block storage，在区域存储发生故障的情况下也能保证持久性</li>
-</ul>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png" alt="Overview of PostgreSQL as integrated with the storage service."></p>
-<h4 id="数据流程"><a href="#数据流程" class="headerlink" title="数据流程"></a>数据流程</h4><ul>
-<li>Primary Instance 持久化 WAL ，将数据库修改操作（INSERT&#x2F;DELETE&#x2F;UPDATE）传送到 log storage。随后，LPS 不断重放这些 WAL 的修改操作，并将最新的数据库页面物化到 block storage。</li>
-<li>为了使 Replica Instances 的本地缓存保持最新，AlloyDB 还将 WAL 记录从 Primary Instance 流式传输到 Replica Instances，以通知它们最新的更改。</li>
-</ul>
-<h4 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h4><ul>
-<li>Full compute&#x2F;storage disaggregation<br>LPS 可以根据工作负载进行横向扩展，并在需要时透明地添加更多计算资源来处理日志以避免热点</li>
-<li>Storage-layer replication<br>跨多个区域同步复制所有 Data Block</li>
-<li>Efficient IO paths &#x2F; no full-page writes<br>对于更新操作，计算层仅将 WAL 传递给存储层，存储层不断重放 WAL。在这种设计中，数据库层不需要 Checkpoint，也不需要通过将完整的 Data Block发送到存储层来避免 torn pages problem</li>
-<li>Low-latency WAL writing</li>
-<li>Fast creation of read replica instances</li>
-<li>Fast restart recovery</li>
-<li>Storage-layer backups</li>
-</ul>
-<h3 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h3><h4 id="写入请求"><a href="#写入请求" class="headerlink" title="写入请求"></a>写入请求</h4><p>由客户端向 Primary Instance 发起，在经过 DB 层解析后，变为一组 WAL 发到存储层。在 WAL 同步写入成功后，事务提交成功返回。之后，LPS 会将日志异步的物化为 Data Block。</p>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png" alt="Write Process"></p>
-<h4 id="读取请求"><a href="#读取请求" class="headerlink" title="读取请求"></a>读取请求</h4><ul>
-<li>由客户端向任何 Instance 发起，在 DB 层解析后，如果命中该 DB 层中的 Buffer Cache，则直接返回；否则去更大的、类似二级缓存的 Ultra-fast Cache 中去找，如命中，则仍可不访问存储层。</li>
-<li>如 Ultra-fast Cache 中仍然缺少所需 block，则会带上 block id 和 LSN，向存储层发送 block 读取请求，<strong>这里的 Ultra-fast Cache 会不会是 NVM 之类的存储介质？</strong></li>
-<li>LSN 用于等待 LPS apply 进度，以保证一致性视图。</li>
-</ul>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png" alt="Read Process"></p>
-<h3 id="存储层弹性伸缩"><a href="#存储层弹性伸缩" class="headerlink" title="存储层弹性伸缩"></a>存储层弹性伸缩</h3><p>Data Block 按组划分到不同的 Shard 中（如一个 Block 是 8KB，一个 Shard 是 10GB，那么一个 Shard 就包含 1310720 个 Block）。每个 Shard 对应一个 LPS，同时 Shard 和 LPS 的映射关系可以会根据 LPS 的伸缩动态变化。</p>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png" alt="LPS Elasticity"></p>
-<h3 id="存储层-Replication-和-Recovery"><a href="#存储层-Replication-和-Recovery" class="headerlink" title="存储层 Replication 和 Recovery"></a>存储层 Replication 和 Recovery</h3><p>AlloyDB 的目标是提供数据持久性和高系统可用性，即使在区域性故障的情况下（例如，在数据中心断电或火灾的情况下）也是如此。为此，每个 AlloyDB 实例的存储层分布在三个 Zone 中。每个 Zone 都有一个完整的数据库状态副本，它通过应用来自 log storage 的 WAL 来不断更新 Data Block。<br><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png" alt="Replication"></p>
-]]></content>
-      <tags>
-        <tag>Cloud Native</tag>
-        <tag>Disaggregation</tag>
-        <tag>Postgres</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Golang HTTP transport</title>
     <url>/2022/05/12/Golang-HTTP-transport/</url>
     <content><![CDATA[<p>使用golang net&#x2F;http库发送http请求，最后都是调用 transport的 RoundTrip方法</p>
@@ -265,60 +221,47 @@
       </tags>
   </entry>
   <entry>
-    <title>HotRing: A Hotspot-Aware In-Memory Key-Value Store</title>
-    <url>/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/</url>
-    <content><![CDATA[<p>Tair<br>(1) mdb是定位于cache缓存，类似于memcache的一个支持kv 内存缓存框架<br>(2) rdb是 定位于cache缓存，采用了redis的内存存储结构的一个支持kv、list等复杂数据结构的缓存框架<br>(3) ldb是一个定位于高性能存储，并可选择内嵌mdb cache加速，这种情况下cache与持久化存储的数据一致性由tair进行维护,支持kv及分级key存储，数据排序的缓存框架（leveldb）</p>
+    <title>[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage</title>
+    <url>/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/</url>
+    <content><![CDATA[<h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。</p>
 <span id="more"></span>
 
-<p>通常情况下，一个集群中包含2台configserver及多台dataServer。</p>
-<p>两台configserver互为主备并通过维护和dataserver之间的心跳获知集群中存活可用的dataserver，构建数据在集群中的分布信息（对照表）。</p>
-<p>dataserver负责数据的存储，并按照configserver的指示完成数据的复制和迁移工作。</p>
-<p>client在启动的时候，从configserver获取数据分布信息，根据数据分布信息和相应的dataserver交互完成用户的请求。</p>
-<p>invalidserver主要负责对等集群的删除和隐藏操作，保证对等集群的数据一致。</p>
-<h2 id="Chain-Base-Index"><a href="#Chain-Base-Index" class="headerlink" title="Chain Base Index"></a>Chain Base Index</h2><p>同时，随着链上 item 数量的不断增加，对 hot item 的内存访问次数可能会线性增长</p>
-<p>所以我们需要一个热点感知的hash index</p>
-<h2 id="Hotspot-Awareness-challenges"><a href="#Hotspot-Awareness-challenges" class="headerlink" title="Hotspot-Awareness challenges"></a>Hotspot-Awareness challenges</h2><p>用一个 head 指针来指向最热的位置，head 指针能动态指向任意一个 item</p>
-<p>为了保证所有 item 的可访问性不受 head 指针的影响，使用有序环结构替换之前的链式结构，这样的环＋head Pointer就可以避免 reorder</p>
-<h2 id="Ordered-ring-structure"><a href="#Ordered-ring-structure" class="headerlink" title="Ordered-ring structure"></a>Ordered-ring structure</h2><p>环装结构可能会导致一个问题：之前的链式结构下，如果next是nil那就可以停止查找，但现在是环装结构如果 target item not found，那么可能会无限移动。</p>
-<p>所以需要知道什么时候需要结束查找：mark 第一个 item 是不合理的，因为这个 item 可能被并发修改，比如被删除了就会有问题。</p>
-<p>可以通过排序，对key进行排序，如果当前移动到的 item 的key比要查找的 item key 大，那么就可以结束查找</p>
-<p>为了防止 key 过长导致两个key的比较时间较长，使用了 tag字段。Item 的rank由tag和key共同决定。</p>
-<p>Tag 是 hash value 的后 n-k 个bit，前k个bit作为 hashtable part</p>
-<h2 id="Identify-hotspots-and-adjust-head-pointer"><a href="#Identify-hotspots-and-adjust-head-pointer" class="headerlink" title="Identify hotspots and adjust head pointer"></a>Identify hotspots and adjust head pointer</h2><p>R的设定影响着响应延迟和热点感知的准确性，R越小，对于热点的感知就会越好，但是这也可能会导致频繁且无效的 head pointer 移动。</p>
-<p>但在当前的热点场景下，数据访问呈现非常极端的表现，所以head pointer并不会频繁移动。根据他们的实验 R 为 5 的时候表现最好。</p>
-<h2 id="Statistical-Sampling-Strategy"><a href="#Statistical-Sampling-Strategy" class="headerlink" title="Statistical Sampling Strategy"></a>Statistical Sampling Strategy</h2><p>当前 x86-64 的机器下，物理地址只有48位，但是可以通过一个 64 位的 CAS 操作进行更新，那么剩下的 16 位可以用作记录元信息。</p>
-<h3 id="Header："><a href="#Header：" class="headerlink" title="Header："></a>Header：</h3><p>active 用来控制热点标识的抽样统计的一个 flag，当 active被set之后，对ring的访问才会被记录在 total counter和相应 item 的counter中。</p>
-<h3 id="Item："><a href="#Item：" class="headerlink" title="Item："></a>Item：</h3><p>rehash 用来控制 rehash，这个后面rehash部分会讲到。</p>
-<p>occupied 是用来确保并发的正确性的，后面并发操作部分会讲到</p>
-<p>每一个线程都有一个 thread-local 变量记录他已经处理的请求数。</p>
-<p>如果第 R 个请求是一个 hot access （head pointer指向的是hot item，其他的是 cold item。对hot item的访问就是 hot access），那么不需要进行改变</p>
-<p>如果是 cold access，set active，开始计数，因为更新计数需要额外的 CAS 操作，所以我们抽样的数量和环上 item的数量保持一致。</p>
-<p>Sampling结束之后一个thread开始计算以第t个item作为head时环的平均内存访问次数Wt，最后选择一个最小Wt的item作为head。（之所以计算环的平均访问次数，是为了适应多热点）</p>
-<p>每次更新完head之后重置counter</p>
-<h2 id="Concurrent-Operations"><a href="#Concurrent-Operations" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>一方面，头部指针的移动可能与其他线程并发。因此，我们需要考虑头部指针移动和其他修改操作的并发性，以防止指针指向无效项。另一方面，当我们删除或更新项目时，我们需要检查头部指针是否指向该项目。如果是这样，我们需要正确而高效地移动头部指针</p>
-<h3 id="RCU（Read-Copy-Update）"><a href="#RCU（Read-Copy-Update）" class="headerlink" title="RCU（Read Copy Update）"></a>RCU（Read Copy Update）</h3><p>适合类似链表的数据结构</p>
-<p>读和写不需要额外的同步机制</p>
-<p>宽限期 grace period</p>
-<p>读多写少</p>
-<p>多个写者需要额外的同步策略</p>
-<h2 id="Concurrent-Operations-1"><a href="#Concurrent-Operations-1" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>read不牵扯任何并发的问题，按照之前流程读就可以</p>
-<p>insert只需要用CAS修改next address就可以</p>
-<p>Update时有个问题就是同时有两个 thread，一个在B的后面insert C，一个修改了B。如图a，B的修改使用RCU，C的插入使用CAS，这样可能导致C的失效。</p>
-<p>所以我们使用之前说过的一个 occupied bit，当对B进行 Update 之后，B的Occupied就会被set，等到A的nextaddress被更新了之后，对C的insert才会成功因为此时的B’的occupied没有被set</p>
-<p>热点转移策略修改的head Pointer，我们会set Occupied，使得在move head 时候不会被Update或修改</p>
-<p>如果是 head item发生了update，那么会先 set new item的Occupied，之后move</p>
-<p>如果head item 被删除，head item 和 next都被 Occupied</p>
-<h2 id="Lock-free-rehash"><a href="#Lock-free-rehash" class="headerlink" title="Lock-free rehash"></a>Lock-free rehash</h2><p>随着不断的 insert，chain的量也越来越大，我们需要根据 data 容量进行 rehash</p>
-<p>常见的Rehash的策略是根据 hash table 的链的平均长度触发 rehash，但这没有考虑到热点的影响</p>
-<p>新建的hash table是原来的两倍大，新建两个 rehashitem，用 rehash bit 来标记 rehash item</p>
-<p>rehash过程分为3步进行，结合上面4图进行说明，图一为哈希表，哈希值在rehash前后的变化。剩余三图为rehash三个过程。</p>
-<p>初始化(Initialization)：首先，HotRing创建一个后台rehash线程。该线程创建2倍空间的新哈希表，通过复用tag的最高一位来进行索引。因此，新表中将会有两个头指针与旧表中的一个头指针对应。HotRing根据tag范围对数据进行划分。假设tag最大值为T，tag范围为[0,T)，则两个新的头指针对应tag范围为[0,T&#x2F;2)和[T&#x2F;2,T)。同时，rahash线程创建一个rehash节点(包含两个空数据的子item节点)，子item节点分别对应两个新头指针。HotRing利用item中的Rehash标志位识别rehash节点的子item节点。</p>
-<p>分裂(Split)：在分裂阶段，rehash线程通过将rehash节点的两个子item节点插入环中完成环的分裂。如图(Split)所示，因为itemB和E是tag的范围边界，所以子item节点分别插入到itemB和E之前。完成两个插入操作后，新哈希表将激活，所有的访问都将通过新哈希表进行访问。到目前为止，已经在逻辑上将冲突环一分为二。当我们查找数据时，最多只需要扫描一半的item。</p>
-<p>删除(Deletion)：删除阶段需要做一些首尾工作，包括旧哈希表的回收。以及rehash节点的删除回收。这里需要强调，分裂阶段和删除阶段间，必须有一个RCU静默期(transition period)。该静默期保证所有从旧哈希表进入的访问均已经返回。否则，直接回收旧哈希表可能导致并发错误。</p>
+<h3 id="AlloyDB-架构"><a href="#AlloyDB-架构" class="headerlink" title="AlloyDB 架构"></a>AlloyDB 架构</h3><p>AlloyDB 存储层是一个分布式系统，由三个主要部分组成：</p>
+<ul>
+<li>一种低延迟的 regional log storage service，用于高速的 WAL 写入</li>
+<li>负责处理 WAL 并生成 “Materialized(物化)” 数据库页面的 log processing service (LPS)</li>
+<li>负责对数据进行容错、分片的 regional block storage，在区域存储发生故障的情况下也能保证持久性</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png" alt="Overview of PostgreSQL as integrated with the storage service."></p>
+<h4 id="数据流程"><a href="#数据流程" class="headerlink" title="数据流程"></a>数据流程</h4><ul>
+<li>Primary Instance 持久化 WAL ，将数据库修改操作（INSERT&#x2F;DELETE&#x2F;UPDATE）传送到 log storage。随后，LPS 不断重放这些 WAL 的修改操作，并将最新的数据库页面物化到 block storage。</li>
+<li>为了使 Replica Instances 的本地缓存保持最新，AlloyDB 还将 WAL 记录从 Primary Instance 流式传输到 Replica Instances，以通知它们最新的更改。</li>
+</ul>
+<h4 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h4><ul>
+<li>Full compute&#x2F;storage disaggregation<br>LPS 可以根据工作负载进行横向扩展，并在需要时透明地添加更多计算资源来处理日志以避免热点</li>
+<li>Storage-layer replication<br>跨多个区域同步复制所有 Data Block</li>
+<li>Efficient IO paths &#x2F; no full-page writes<br>对于更新操作，计算层仅将 WAL 传递给存储层，存储层不断重放 WAL。在这种设计中，数据库层不需要 Checkpoint，也不需要通过将完整的 Data Block发送到存储层来避免 torn pages problem</li>
+<li>Low-latency WAL writing</li>
+<li>Fast creation of read replica instances</li>
+<li>Fast restart recovery</li>
+<li>Storage-layer backups</li>
+</ul>
+<h3 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h3><h4 id="写入请求"><a href="#写入请求" class="headerlink" title="写入请求"></a>写入请求</h4><p>由客户端向 Primary Instance 发起，在经过 DB 层解析后，变为一组 WAL 发到存储层。在 WAL 同步写入成功后，事务提交成功返回。之后，LPS 会将日志异步的物化为 Data Block。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png" alt="Write Process"></p>
+<h4 id="读取请求"><a href="#读取请求" class="headerlink" title="读取请求"></a>读取请求</h4><ul>
+<li>由客户端向任何 Instance 发起，在 DB 层解析后，如果命中该 DB 层中的 Buffer Cache，则直接返回；否则去更大的、类似二级缓存的 Ultra-fast Cache 中去找，如命中，则仍可不访问存储层。</li>
+<li>如 Ultra-fast Cache 中仍然缺少所需 block，则会带上 block id 和 LSN，向存储层发送 block 读取请求，<strong>这里的 Ultra-fast Cache 会不会是 NVM 之类的存储介质？</strong></li>
+<li>LSN 用于等待 LPS apply 进度，以保证一致性视图。</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png" alt="Read Process"></p>
+<h3 id="存储层弹性伸缩"><a href="#存储层弹性伸缩" class="headerlink" title="存储层弹性伸缩"></a>存储层弹性伸缩</h3><p>Data Block 按组划分到不同的 Shard 中（如一个 Block 是 8KB，一个 Shard 是 10GB，那么一个 Shard 就包含 1310720 个 Block）。每个 Shard 对应一个 LPS，同时 Shard 和 LPS 的映射关系可以会根据 LPS 的伸缩动态变化。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png" alt="LPS Elasticity"></p>
+<h3 id="存储层-Replication-和-Recovery"><a href="#存储层-Replication-和-Recovery" class="headerlink" title="存储层 Replication 和 Recovery"></a>存储层 Replication 和 Recovery</h3><p>AlloyDB 的目标是提供数据持久性和高系统可用性，即使在区域性故障的情况下（例如，在数据中心断电或火灾的情况下）也是如此。为此，每个 AlloyDB 实例的存储层分布在三个 Zone 中。每个 Zone 都有一个完整的数据库状态副本，它通过应用来自 log storage 的 WAL 来不断更新 Data Block。<br><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png" alt="Replication"></p>
 ]]></content>
       <tags>
-        <tag>Paper</tag>
-        <tag>Cache</tag>
+        <tag>Cloud Native</tag>
+        <tag>Disaggregation</tag>
+        <tag>Postgres</tag>
       </tags>
   </entry>
   <entry>
@@ -393,6 +336,63 @@
       <tags>
         <tag>Paper</tag>
         <tag>Raft</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>HotRing: A Hotspot-Aware In-Memory Key-Value Store</title>
+    <url>/2022/05/15/HotRing-A-Hotspot-Aware-In-Memory-Key-Value-Store/</url>
+    <content><![CDATA[<p>Tair<br>(1) mdb是定位于cache缓存，类似于memcache的一个支持kv 内存缓存框架<br>(2) rdb是 定位于cache缓存，采用了redis的内存存储结构的一个支持kv、list等复杂数据结构的缓存框架<br>(3) ldb是一个定位于高性能存储，并可选择内嵌mdb cache加速，这种情况下cache与持久化存储的数据一致性由tair进行维护,支持kv及分级key存储，数据排序的缓存框架（leveldb）</p>
+<span id="more"></span>
+
+<p>通常情况下，一个集群中包含2台configserver及多台dataServer。</p>
+<p>两台configserver互为主备并通过维护和dataserver之间的心跳获知集群中存活可用的dataserver，构建数据在集群中的分布信息（对照表）。</p>
+<p>dataserver负责数据的存储，并按照configserver的指示完成数据的复制和迁移工作。</p>
+<p>client在启动的时候，从configserver获取数据分布信息，根据数据分布信息和相应的dataserver交互完成用户的请求。</p>
+<p>invalidserver主要负责对等集群的删除和隐藏操作，保证对等集群的数据一致。</p>
+<h2 id="Chain-Base-Index"><a href="#Chain-Base-Index" class="headerlink" title="Chain Base Index"></a>Chain Base Index</h2><p>同时，随着链上 item 数量的不断增加，对 hot item 的内存访问次数可能会线性增长</p>
+<p>所以我们需要一个热点感知的hash index</p>
+<h2 id="Hotspot-Awareness-challenges"><a href="#Hotspot-Awareness-challenges" class="headerlink" title="Hotspot-Awareness challenges"></a>Hotspot-Awareness challenges</h2><p>用一个 head 指针来指向最热的位置，head 指针能动态指向任意一个 item</p>
+<p>为了保证所有 item 的可访问性不受 head 指针的影响，使用有序环结构替换之前的链式结构，这样的环＋head Pointer就可以避免 reorder</p>
+<h2 id="Ordered-ring-structure"><a href="#Ordered-ring-structure" class="headerlink" title="Ordered-ring structure"></a>Ordered-ring structure</h2><p>环装结构可能会导致一个问题：之前的链式结构下，如果next是nil那就可以停止查找，但现在是环装结构如果 target item not found，那么可能会无限移动。</p>
+<p>所以需要知道什么时候需要结束查找：mark 第一个 item 是不合理的，因为这个 item 可能被并发修改，比如被删除了就会有问题。</p>
+<p>可以通过排序，对key进行排序，如果当前移动到的 item 的key比要查找的 item key 大，那么就可以结束查找</p>
+<p>为了防止 key 过长导致两个key的比较时间较长，使用了 tag字段。Item 的rank由tag和key共同决定。</p>
+<p>Tag 是 hash value 的后 n-k 个bit，前k个bit作为 hashtable part</p>
+<h2 id="Identify-hotspots-and-adjust-head-pointer"><a href="#Identify-hotspots-and-adjust-head-pointer" class="headerlink" title="Identify hotspots and adjust head pointer"></a>Identify hotspots and adjust head pointer</h2><p>R的设定影响着响应延迟和热点感知的准确性，R越小，对于热点的感知就会越好，但是这也可能会导致频繁且无效的 head pointer 移动。</p>
+<p>但在当前的热点场景下，数据访问呈现非常极端的表现，所以head pointer并不会频繁移动。根据他们的实验 R 为 5 的时候表现最好。</p>
+<h2 id="Statistical-Sampling-Strategy"><a href="#Statistical-Sampling-Strategy" class="headerlink" title="Statistical Sampling Strategy"></a>Statistical Sampling Strategy</h2><p>当前 x86-64 的机器下，物理地址只有48位，但是可以通过一个 64 位的 CAS 操作进行更新，那么剩下的 16 位可以用作记录元信息。</p>
+<h3 id="Header："><a href="#Header：" class="headerlink" title="Header："></a>Header：</h3><p>active 用来控制热点标识的抽样统计的一个 flag，当 active被set之后，对ring的访问才会被记录在 total counter和相应 item 的counter中。</p>
+<h3 id="Item："><a href="#Item：" class="headerlink" title="Item："></a>Item：</h3><p>rehash 用来控制 rehash，这个后面rehash部分会讲到。</p>
+<p>occupied 是用来确保并发的正确性的，后面并发操作部分会讲到</p>
+<p>每一个线程都有一个 thread-local 变量记录他已经处理的请求数。</p>
+<p>如果第 R 个请求是一个 hot access （head pointer指向的是hot item，其他的是 cold item。对hot item的访问就是 hot access），那么不需要进行改变</p>
+<p>如果是 cold access，set active，开始计数，因为更新计数需要额外的 CAS 操作，所以我们抽样的数量和环上 item的数量保持一致。</p>
+<p>Sampling结束之后一个thread开始计算以第t个item作为head时环的平均内存访问次数Wt，最后选择一个最小Wt的item作为head。（之所以计算环的平均访问次数，是为了适应多热点）</p>
+<p>每次更新完head之后重置counter</p>
+<h2 id="Concurrent-Operations"><a href="#Concurrent-Operations" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>一方面，头部指针的移动可能与其他线程并发。因此，我们需要考虑头部指针移动和其他修改操作的并发性，以防止指针指向无效项。另一方面，当我们删除或更新项目时，我们需要检查头部指针是否指向该项目。如果是这样，我们需要正确而高效地移动头部指针</p>
+<h3 id="RCU（Read-Copy-Update）"><a href="#RCU（Read-Copy-Update）" class="headerlink" title="RCU（Read Copy Update）"></a>RCU（Read Copy Update）</h3><p>适合类似链表的数据结构</p>
+<p>读和写不需要额外的同步机制</p>
+<p>宽限期 grace period</p>
+<p>读多写少</p>
+<p>多个写者需要额外的同步策略</p>
+<h2 id="Concurrent-Operations-1"><a href="#Concurrent-Operations-1" class="headerlink" title="Concurrent Operations"></a>Concurrent Operations</h2><p>read不牵扯任何并发的问题，按照之前流程读就可以</p>
+<p>insert只需要用CAS修改next address就可以</p>
+<p>Update时有个问题就是同时有两个 thread，一个在B的后面insert C，一个修改了B。如图a，B的修改使用RCU，C的插入使用CAS，这样可能导致C的失效。</p>
+<p>所以我们使用之前说过的一个 occupied bit，当对B进行 Update 之后，B的Occupied就会被set，等到A的nextaddress被更新了之后，对C的insert才会成功因为此时的B’的occupied没有被set</p>
+<p>热点转移策略修改的head Pointer，我们会set Occupied，使得在move head 时候不会被Update或修改</p>
+<p>如果是 head item发生了update，那么会先 set new item的Occupied，之后move</p>
+<p>如果head item 被删除，head item 和 next都被 Occupied</p>
+<h2 id="Lock-free-rehash"><a href="#Lock-free-rehash" class="headerlink" title="Lock-free rehash"></a>Lock-free rehash</h2><p>随着不断的 insert，chain的量也越来越大，我们需要根据 data 容量进行 rehash</p>
+<p>常见的Rehash的策略是根据 hash table 的链的平均长度触发 rehash，但这没有考虑到热点的影响</p>
+<p>新建的hash table是原来的两倍大，新建两个 rehashitem，用 rehash bit 来标记 rehash item</p>
+<p>rehash过程分为3步进行，结合上面4图进行说明，图一为哈希表，哈希值在rehash前后的变化。剩余三图为rehash三个过程。</p>
+<p>初始化(Initialization)：首先，HotRing创建一个后台rehash线程。该线程创建2倍空间的新哈希表，通过复用tag的最高一位来进行索引。因此，新表中将会有两个头指针与旧表中的一个头指针对应。HotRing根据tag范围对数据进行划分。假设tag最大值为T，tag范围为[0,T)，则两个新的头指针对应tag范围为[0,T&#x2F;2)和[T&#x2F;2,T)。同时，rahash线程创建一个rehash节点(包含两个空数据的子item节点)，子item节点分别对应两个新头指针。HotRing利用item中的Rehash标志位识别rehash节点的子item节点。</p>
+<p>分裂(Split)：在分裂阶段，rehash线程通过将rehash节点的两个子item节点插入环中完成环的分裂。如图(Split)所示，因为itemB和E是tag的范围边界，所以子item节点分别插入到itemB和E之前。完成两个插入操作后，新哈希表将激活，所有的访问都将通过新哈希表进行访问。到目前为止，已经在逻辑上将冲突环一分为二。当我们查找数据时，最多只需要扫描一半的item。</p>
+<p>删除(Deletion)：删除阶段需要做一些首尾工作，包括旧哈希表的回收。以及rehash节点的删除回收。这里需要强调，分裂阶段和删除阶段间，必须有一个RCU静默期(transition period)。该静默期保证所有从旧哈希表进入的访问均已经返回。否则，直接回收旧哈希表可能导致并发错误。</p>
+]]></content>
+      <tags>
+        <tag>Paper</tag>
+        <tag>Cache</tag>
       </tags>
   </entry>
   <entry>
@@ -913,6 +913,69 @@
       </tags>
   </entry>
   <entry>
+    <title>[SIGMOD 2021] Nova-LSM: A Distributed, Component-based LSM-tree Key-value Store</title>
+    <url>/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/</url>
+    <content><![CDATA[<p>Nova-LSM 是一个存算分离的 LSM key-value store，计算和存储分为不同的组件并通过 RDMA 通信。整体包含 LSM-tree Component (LTC), Logging Component (LogC) 和 Storage Component (StoC) 这三个模块，LTC 和 LogC 都通过 StoC 存储数据。</p>
+<span id="more"></span>
+
+<h2 id="架构"><a href="#架构" class="headerlink" title="架构"></a>架构</h2><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png" alt="系统架构"></p>
+<p>基于 RDMA 网络将 LSM 进行存算分离，每个 LTC 负责处理某些 key range 的请求，LogC 用于记录日志，StoC 负责存储 SSTable 和日志文件。</p>
+<p>每个 LTC 为存储数据划分若干个 range，每个 range 由 LSM Tree 维护。range 和 LTC 的映射关系是动态调整的，在 Coordiantor 中保存，使用 lease 机制进行并发控制，同时使用 zookeeper 实现高可用。每个 range 包含了多个 Drange，每个 Drange 又有多个连续的 Trange。每个 Trange 的大小可以是不同的，根据负载分布进行调整，可以通过迁移 Drange 和 Trange 进行负载均衡（minor reorganization），在严重负载不均的情况下会重新计算 Trange 和 Drange（major reorganization）。在迁移时只需要通过 RDMA READ 从 StoC 读取日志记录构建 memtable 即可。</p>
+<h3 id="RDMA"><a href="#RDMA" class="headerlink" title="RDMA"></a>RDMA</h3><p>传统的网卡上做服务端之间的数据通信，首先 CPU 要把数据从用户空间拷贝一份到内核空间的 socket buffer 中，然后内核的 TCP&#x2F;IP 协议栈给数据添加头部和校验信息，物理层的网卡通过 DMA 从内核中 copy 数据后在发送到别的服务器的网卡上。<br>而 RDMA 简单来说就是省去了数据从用户态拷贝到内核态的步骤，不需要 CPU 参与，报文的组装和解析在硬件层完成。而对于数据库系统加速来说，通常使用的是 READ&#x2F;WRITE 的语义，两个 server 之间通过一对分别在 server 的队列（QP）进行异步通信。</p>
+<h3 id="线程模型"><a href="#线程模型" class="headerlink" title="线程模型"></a>线程模型</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/thread.png" alt="线程模型"></p>
+<p>LTC 有四种线程：</p>
+<ul>
+<li>client worker thread: 接受外界请求</li>
+<li>compaction thread: 把 immutable memtables flush 到 StoC，然后协调 StoC 之间的 compaction 操作</li>
+<li>exchange thread: 负责与 StoC 的通信</li>
+<li>reorganization thread: 负责 Dranges 的负载均衡</li>
+</ul>
+<p>StoC有三种线程：</p>
+<ul>
+<li>exchange(xchg) thread: 负责与本节点上的其他 xchg 线程通信和其他 StoC&#x2F;LTC 节点上的通信</li>
+<li>compaction thread: 进行 SSTable 的 compaction 操作与文件的落盘</li>
+<li>storage thread: 负责 block 数据的读写</li>
+</ul>
+<h3 id="Drange"><a href="#Drange" class="headerlink" title="Drange"></a>Drange</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/drange.png" alt="Drange"></p>
+<p>LTC 在内存中维护了大量的 memtable 使得大量插入数据都可以暂时存储在内存中减少对磁盘的 IO 压力，但这也带来了几个挑战：</p>
+<ol>
+<li>immutable memtable 落盘后直接就是 level0 的 SSTable，那么这也意味着 level0 的 SSTable 数量也会相应增多，导致 compaction 到 level1+ 的时候造成的写放大会更严重</li>
+<li>读放大也会相应变大，因为需要 scan 所有的 memtable 和 level 0 的 SSTable</li>
+</ol>
+<p>因此 Nova-LSM 通过 Dynamic Range (Drange) 均衡写入来解决上述问题，可以理解为在原 LSM 上把 memtable 数据划分为更小粒度的 range 称为 Drange，不同 range之 间的 compaction&#x2F;write 操作相互独立因此可以并行操作，并且还可以根据查询的热点写入的流量负载来对 range 范围做动态的调整。</p>
+<p>每个 Drange 的 memtable 的数量都是相同的，写操作将数据插入到包含其 key 的 Drange 的 memtable 中，以避免相同 key 的不同记录分散在不同的 memtable 中造成 compaction 时候的写放大。这样也保证了由不同 Drange 落盘的 SSTable 是互斥不会相互影响，因此可以并行进行 compaction。</p>
+<p>LTC 的 reorg thread 负责对 range 进行 minor&#x2F;major reorganizaiton：</p>
+<ul>
+<li>minor reorg<br>通过构造特别小的 Tranges 在不同 Dranges 进行传输来调整区间范围，如把热点 Dranges 的部分区间数据转移到临近的 Dranges</li>
+<li>major reorg<br>通过采样的写入负载频率数据来重新构建 Dranges 和 Tranges</li>
+</ul>
+<p>如果某个 key 是一个写入热点，那么 Drange 可以为这个单点的 range 做 duplicate，写入操作可以写到任意一个 Drange下的 memtable 中，减少了由同步写入一个 memtable 产生的开销，也分摊了单个 Drange 的写入负载压力。</p>
+<p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/compaction.png" alt="Drange Compaction"></p>
+<p>LTC 会有一个 coordinator thread 来进行 compaction 任务的调度，把热点 StoC 节点上的任务分发给别的空闲的 StoC 节点。存储节点首先 prefetch 所有 compaction job 中的 SSTable 到 memory 中，合并完后新的 SSTable 可能会写到本地或是其他存储节点上。compaction 完成后，存储节点会向 coordinator thread 返回所有包含新生成的 SSTable 列表，由其负责删除原来的 SSTable 并更新元数据文件。</p>
+<h2 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h2><h3 id="Get"><a href="#Get" class="headerlink" title="Get"></a>Get</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/lookup.png" alt="lookup index"></p>
+<p>每个 LTC 会维护一个 lookup index，来维护 key 的最新 value 具体保存在哪个 level0 的 SSTable 或者 memtable。如果 index 中没有相关记录才去查询更高 level 的 SSTable。并且 LTC 为每个 SSTable 在内存中维护 bloom filter 来剪枝。除此之外更高 level 的 SSTable 的查询操作也可以并行化。</p>
+<p>当写操作插入一条新数据到 memtable m 的时候，会更新 &lt;key, mid&gt; 映射，mid 用来唯一标记一个 memtable。LTC 会额外维护一个映射结构：MIDToTable，维护 mid 到一个 memtable 的指针或者 level0 的 SSTable 的 file number。<br>当 compaction 操作将 immutable memtable 从 sstable flush 到 StoC 的时候，就会原子更新这个 MIDToTable 结构中 mid 到 SSTable file number的映射，同时把对应的指向 memtable 的指针设为无效。</p>
+<h3 id="Scan"><a href="#Scan" class="headerlink" title="Scan"></a>Scan</h3><p>为每个 Drange 的 memtable 和 level0 SSTable 维护 range index，scan 时进行二分查找定位到相应分区，并依次 scan level1+ 的 range。</p>
+<h3 id="Placement"><a href="#Placement" class="headerlink" title="Placement"></a>Placement</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png" alt="SSTable Placement"></p>
+<p>SSTable 被划分为更小的粒度 data fragment 在不同的存储节点中存储，Nova-LSM 采用 power-of-d (The Power of Two Random Choices) 的分片策略，假设 SST 被分成 p 个 fragment，LTC 则在 2 * p 个随机挑选出的节点中选择 disk io queue 最短的 p 个节点。随后 p 个 fragment 将会并行写入到不同的存储节点中，同时写入 index 和 bloom filter block 到存储节点中。</p>
+<p>为了保证可用性，data fragment 会构建一个 <code>parity block</code> 存储到不同的存储节点中。并且通过对 SST 的 metadata block 进行 replication 来保证高可用，读取请求可以从任意的 replica 中读取 metadata block。</p>
+<h3 id="Write"><a href="#Write" class="headerlink" title="Write"></a>Write</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/workflow.png" alt="write workflow"></p>
+<p>data fragment 写入 StoC 文件中的流程：</p>
+<ol>
+<li>client 发送写请求打开一个新的 StoC 文件</li>
+<li>StoC 节点在 buffer 分配一个内存区域，大小等于 fragment 大小。然后给该区域分配一个唯一的 id，向客户端返回该 memory zone 的偏移量以及 unique id，客户端就调用 RDMA WRITE 来写入 block 数据</li>
+<li>buffer 的 block 数据刷盘</li>
+<li>向客户端返回确认</li>
+<li>用上述相同步骤写 metadata block</li>
+</ol>
+]]></content>
+      <tags>
+        <tag>Paper</tag>
+        <tag>Cloud Native</tag>
+        <tag>LSM</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>UUID</title>
     <url>/2022/05/15/UUID/</url>
     <content><![CDATA[<h3 id="UUID-特点"><a href="#UUID-特点" class="headerlink" title="UUID 特点"></a>UUID 特点</h3><ul>
@@ -969,69 +1032,6 @@
       </tags>
   </entry>
   <entry>
-    <title>[SIGMOD 2021] Nova-LSM: A Distributed, Component-based LSM-tree Key-value Store</title>
-    <url>/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/</url>
-    <content><![CDATA[<p>Nova-LSM 是一个存算分离的 LSM key-value store，计算和存储分为不同的组件并通过 RDMA 通信。整体包含 LSM-tree Component (LTC), Logging Component (LogC) 和 Storage Component (StoC) 这三个模块，LTC 和 LogC 都通过 StoC 存储数据。</p>
-<span id="more"></span>
-
-<h2 id="架构"><a href="#架构" class="headerlink" title="架构"></a>架构</h2><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png" alt="系统架构"></p>
-<p>基于 RDMA 网络将 LSM 进行存算分离，每个 LTC 负责处理某些 key range 的请求，LogC 用于记录日志，StoC 负责存储 SSTable 和日志文件。</p>
-<p>每个 LTC 为存储数据划分若干个 range，每个 range 由 LSM Tree 维护。range 和 LTC 的映射关系是动态调整的，在 Coordiantor 中保存，使用 lease 机制进行并发控制，同时使用 zookeeper 实现高可用。每个 range 包含了多个 Drange，每个 Drange 又有多个连续的 Trange。每个 Trange 的大小可以是不同的，根据负载分布进行调整，可以通过迁移 Drange 和 Trange 进行负载均衡（minor reorganization），在严重负载不均的情况下会重新计算 Trange 和 Drange（major reorganization）。在迁移时只需要通过 RDMA READ 从 StoC 读取日志记录构建 memtable 即可。</p>
-<h3 id="RDMA"><a href="#RDMA" class="headerlink" title="RDMA"></a>RDMA</h3><p>传统的网卡上做服务端之间的数据通信，首先 CPU 要把数据从用户空间拷贝一份到内核空间的 socket buffer 中，然后内核的 TCP&#x2F;IP 协议栈给数据添加头部和校验信息，物理层的网卡通过 DMA 从内核中 copy 数据后在发送到别的服务器的网卡上。<br>而 RDMA 简单来说就是省去了数据从用户态拷贝到内核态的步骤，不需要 CPU 参与，报文的组装和解析在硬件层完成。而对于数据库系统加速来说，通常使用的是 READ&#x2F;WRITE 的语义，两个 server 之间通过一对分别在 server 的队列（QP）进行异步通信。</p>
-<h3 id="线程模型"><a href="#线程模型" class="headerlink" title="线程模型"></a>线程模型</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/thread.png" alt="线程模型"></p>
-<p>LTC 有四种线程：</p>
-<ul>
-<li>client worker thread: 接受外界请求</li>
-<li>compaction thread: 把 immutable memtables flush 到 StoC，然后协调 StoC 之间的 compaction 操作</li>
-<li>exchange thread: 负责与 StoC 的通信</li>
-<li>reorganization thread: 负责 Dranges 的负载均衡</li>
-</ul>
-<p>StoC有三种线程：</p>
-<ul>
-<li>exchange(xchg) thread: 负责与本节点上的其他 xchg 线程通信和其他 StoC&#x2F;LTC 节点上的通信</li>
-<li>compaction thread: 进行 SSTable 的 compaction 操作与文件的落盘</li>
-<li>storage thread: 负责 block 数据的读写</li>
-</ul>
-<h3 id="Drange"><a href="#Drange" class="headerlink" title="Drange"></a>Drange</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/drange.png" alt="Drange"></p>
-<p>LTC 在内存中维护了大量的 memtable 使得大量插入数据都可以暂时存储在内存中减少对磁盘的 IO 压力，但这也带来了几个挑战：</p>
-<ol>
-<li>immutable memtable 落盘后直接就是 level0 的 SSTable，那么这也意味着 level0 的 SSTable 数量也会相应增多，导致 compaction 到 level1+ 的时候造成的写放大会更严重</li>
-<li>读放大也会相应变大，因为需要 scan 所有的 memtable 和 level 0 的 SSTable</li>
-</ol>
-<p>因此 Nova-LSM 通过 Dynamic Range (Drange) 均衡写入来解决上述问题，可以理解为在原 LSM 上把 memtable 数据划分为更小粒度的 range 称为 Drange，不同 range之 间的 compaction&#x2F;write 操作相互独立因此可以并行操作，并且还可以根据查询的热点写入的流量负载来对 range 范围做动态的调整。</p>
-<p>每个 Drange 的 memtable 的数量都是相同的，写操作将数据插入到包含其 key 的 Drange 的 memtable 中，以避免相同 key 的不同记录分散在不同的 memtable 中造成 compaction 时候的写放大。这样也保证了由不同 Drange 落盘的 SSTable 是互斥不会相互影响，因此可以并行进行 compaction。</p>
-<p>LTC 的 reorg thread 负责对 range 进行 minor&#x2F;major reorganizaiton：</p>
-<ul>
-<li>minor reorg<br>通过构造特别小的 Tranges 在不同 Dranges 进行传输来调整区间范围，如把热点 Dranges 的部分区间数据转移到临近的 Dranges</li>
-<li>major reorg<br>通过采样的写入负载频率数据来重新构建 Dranges 和 Tranges</li>
-</ul>
-<p>如果某个 key 是一个写入热点，那么 Drange 可以为这个单点的 range 做 duplicate，写入操作可以写到任意一个 Drange下的 memtable 中，减少了由同步写入一个 memtable 产生的开销，也分摊了单个 Drange 的写入负载压力。</p>
-<p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/compaction.png" alt="Drange Compaction"></p>
-<p>LTC 会有一个 coordinator thread 来进行 compaction 任务的调度，把热点 StoC 节点上的任务分发给别的空闲的 StoC 节点。存储节点首先 prefetch 所有 compaction job 中的 SSTable 到 memory 中，合并完后新的 SSTable 可能会写到本地或是其他存储节点上。compaction 完成后，存储节点会向 coordinator thread 返回所有包含新生成的 SSTable 列表，由其负责删除原来的 SSTable 并更新元数据文件。</p>
-<h2 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h2><h3 id="Get"><a href="#Get" class="headerlink" title="Get"></a>Get</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/lookup.png" alt="lookup index"></p>
-<p>每个 LTC 会维护一个 lookup index，来维护 key 的最新 value 具体保存在哪个 level0 的 SSTable 或者 memtable。如果 index 中没有相关记录才去查询更高 level 的S STable。并且 LTC 为每个 SStable 在内存中维护 bloom filter 来剪枝。除此之外更高 level 的 SSTable 的查询操作也可以并行化。</p>
-<p>当写操作插入一条新数据到 memtable m 的时候，会更新 &lt;key, mid&gt; 映射，mid 用来唯一标记一个 memtable。LTC 会额外维护一个映射结构：MIDToTable，维护 mid 到一个 memtable 的指针或者 level0 的 SSTable 的 file number。<br>当 compaction 操作将 immutable memtable 从 sstable flush 到 StoC 的时候，就会原子更新这个 MIDToTable 结构中 mid 到 SSTable file number的映射，同时把对应的指向 memtable 的指针设为无效。</p>
-<h3 id="Scan"><a href="#Scan" class="headerlink" title="Scan"></a>Scan</h3><p>为每个 Drange 的 memtable 和 level0 SSTable 维护 range index，scan 时进行二分查找定位到相应分区，并依次 scan level1+ 的 range。</p>
-<h3 id="Placement"><a href="#Placement" class="headerlink" title="Placement"></a>Placement</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png" alt="SSTable Placement"></p>
-<p>SSTable 被划分为更小的粒度 data fragment 在不同的存储节点中存储，Nova-LSM 采用 power-of-d (The Power of Two Random Choices) 的分片策略，假设 SST 被分成 p 个 fragment，LTC 则在 2 * p 个随机挑选出的节点中选择 disk io queue 最短的 p 个节点。随后 p 个 fragment 将会并行写入到不同的存储节点中，同时写入 index 和 bloom filter block 到存储节点中。</p>
-<p>为了保证可用性，data fragment 会构建一个 <code>parity block</code> 存储到不同的存储节点中。并且通过对 SST 的 metadata block 进行 replication 来保证高可用，读取请求可以从任意的 replica 中读取 metadata block。</p>
-<h3 id="Write"><a href="#Write" class="headerlink" title="Write"></a>Write</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/workflow.png" alt="write workflow"></p>
-<p>data fragment 写入 StoC 文件中的流程：</p>
-<ol>
-<li>client 发送写请求打开一个新的 StoC 文件</li>
-<li>StoC 节点在 buffer 分配一个内存区域，大小等于 fragment 大小。然后给该区域分配一个唯一的 id，向客户端返回该 memory zone 的偏移量以及 unique id，客户端就调用 RDMA WRITE 来写入 block 数据</li>
-<li>buffer 的 block 数据刷盘</li>
-<li>向客户端返回确认</li>
-<li>用上述相同步骤写 metadata block</li>
-</ol>
-]]></content>
-      <tags>
-        <tag>Paper</tag>
-        <tag>Cloud Native</tag>
-        <tag>LSM</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Varint</title>
     <url>/2022/05/15/Varint/</url>
     <content><![CDATA[<h3 id="Varint-编码原理"><a href="#Varint-编码原理" class="headerlink" title="Varint 编码原理"></a>Varint 编码原理</h3><p>除了最后一个字节外，varint 编码中的每个字节都设置了最高有效位 (most significant bit - msb)</p>
@@ -1046,19 +1046,6 @@
 ]]></content>
       <tags>
         <tag>Engineering</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>bug of Golang httputil.ReverseProxy</title>
-    <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
-    <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
-<span id="more"></span>
-
-<p>I construct a broken server. The server will always send 100-continue and an incorrect header to proxy. In ReverseProxy，transport.RoundTrip(outreq) will receive an error and don’t keep the connection to client. After the connection is closed, (*conn).finalFlush will assign (*conn).bufw &#x3D; nil. At the same time, writeLoop probably doesn’t exit and may writeBody. The body here is an *expectContinueReader. When writeLoop first reads it, it writes 100-continue to client. But (*expectContinueReader).resp.conn.bufw &#x3D;&#x3D; nil, so it leads to panic. If writeBody happens before assign，it leads to data race.</p>
-<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;io&quot;</span></span><br><span class="line">    <span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http/httputil&quot;</span></span><br><span class="line">    <span class="string">&quot;net/url&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> zeroReader <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(zeroReader)</span></span> Read(p []<span class="type">byte</span>) (<span class="type">int</span>, <span class="type">error</span>) &#123; <span class="keyword">return</span> <span class="built_in">len</span>(p), <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> infinite io.Reader = &amp;zeroReader&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">brokenBackend</span><span class="params">()</span></span> &#123;</span><br><span class="line">    http.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        conn, bfw, err := w.(http.Hijacker).Hijack()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;hijack failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// Tell client net/http.(*persistConn).writeLoop() to continue writeBody.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;HTTP/1.1 100 Continue\r\n\r\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Send client a wrong format header to make client net/http.(*persistConn).readLoop() readResponse failed.</span></span><br><span class="line">        <span class="comment">// Then client net/http.(*persistConn).roundTrip() will return an error and probably doesn&#x27;t wait</span></span><br><span class="line">        <span class="comment">// net/http.(*persistConn).writeLoop() to exit.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;BROKEN-HEADER\r\n\r\n&quot;</span>)</span><br><span class="line">        bfw.Flush()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Keep this connection for 1s so that the client doesn&#x27;t think the connection is down immediately.</span></span><br><span class="line">        &lt;-time.AfterFunc(time.Second, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; conn.Close() &#125;).C</span><br><span class="line">    &#125;)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8081&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Proxy just forwards requests to the broken backend.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">proxy</span><span class="params">()</span></span> &#123;</span><br><span class="line">    target, err := url.Parse(<span class="string">&quot;http://localhost:8081&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;parse target url failed: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">    p := httputil.NewSingleHostReverseProxy(target)</span><br><span class="line">    p.ErrorLog = log.New(ioutil.Discard, <span class="string">&quot;&quot;</span>, <span class="number">0</span>)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, p)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> brokenBackend()</span><br><span class="line">    <span class="keyword">go</span> proxy()</span><br><span class="line">    <span class="comment">// Wait backend and proxy server to start</span></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> <span class="keyword">range</span> time.Tick(time.Millisecond * <span class="number">100</span>) &#123;</span><br><span class="line">        req, err := http.NewRequest(<span class="string">&quot;PUT&quot;</span>, <span class="string">&quot;http://localhost:8080&quot;</span>, io.LimitReader(infinite, <span class="number">65536</span>))</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;create request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        req.Header.Set(<span class="string">&quot;Expect&quot;</span>, <span class="string">&quot;100-continue&quot;</span>)</span><br><span class="line">        _, err = http.DefaultClient.Do(req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;do request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-]]></content>
-      <tags>
-        <tag>Golang</tag>
       </tags>
   </entry>
   <entry>
@@ -1097,6 +1084,19 @@
       <tags>
         <tag>Paper</tag>
         <tag>LSM</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>bug of Golang httputil.ReverseProxy</title>
+    <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
+    <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
+<span id="more"></span>
+
+<p>I construct a broken server. The server will always send 100-continue and an incorrect header to proxy. In ReverseProxy，transport.RoundTrip(outreq) will receive an error and don’t keep the connection to client. After the connection is closed, (*conn).finalFlush will assign (*conn).bufw &#x3D; nil. At the same time, writeLoop probably doesn’t exit and may writeBody. The body here is an *expectContinueReader. When writeLoop first reads it, it writes 100-continue to client. But (*expectContinueReader).resp.conn.bufw &#x3D;&#x3D; nil, so it leads to panic. If writeBody happens before assign，it leads to data race.</p>
+<figure class="highlight go"><table><tr><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;io&quot;</span></span><br><span class="line">    <span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http&quot;</span></span><br><span class="line">    <span class="string">&quot;net/http/httputil&quot;</span></span><br><span class="line">    <span class="string">&quot;net/url&quot;</span></span><br><span class="line">    <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> zeroReader <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(zeroReader)</span></span> Read(p []<span class="type">byte</span>) (<span class="type">int</span>, <span class="type">error</span>) &#123; <span class="keyword">return</span> <span class="built_in">len</span>(p), <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> infinite io.Reader = &amp;zeroReader&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">brokenBackend</span><span class="params">()</span></span> &#123;</span><br><span class="line">    http.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        conn, bfw, err := w.(http.Hijacker).Hijack()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;hijack failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// Tell client net/http.(*persistConn).writeLoop() to continue writeBody.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;HTTP/1.1 100 Continue\r\n\r\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Send client a wrong format header to make client net/http.(*persistConn).readLoop() readResponse failed.</span></span><br><span class="line">        <span class="comment">// Then client net/http.(*persistConn).roundTrip() will return an error and probably doesn&#x27;t wait</span></span><br><span class="line">        <span class="comment">// net/http.(*persistConn).writeLoop() to exit.</span></span><br><span class="line">        bfw.WriteString(<span class="string">&quot;BROKEN-HEADER\r\n\r\n&quot;</span>)</span><br><span class="line">        bfw.Flush()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// Keep this connection for 1s so that the client doesn&#x27;t think the connection is down immediately.</span></span><br><span class="line">        &lt;-time.AfterFunc(time.Second, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; conn.Close() &#125;).C</span><br><span class="line">    &#125;)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8081&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Proxy just forwards requests to the broken backend.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">proxy</span><span class="params">()</span></span> &#123;</span><br><span class="line">    target, err := url.Parse(<span class="string">&quot;http://localhost:8081&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;parse target url failed: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">    p := httputil.NewSingleHostReverseProxy(target)</span><br><span class="line">    p.ErrorLog = log.New(ioutil.Discard, <span class="string">&quot;&quot;</span>, <span class="number">0</span>)</span><br><span class="line">    http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, p)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> brokenBackend()</span><br><span class="line">    <span class="keyword">go</span> proxy()</span><br><span class="line">    <span class="comment">// Wait backend and proxy server to start</span></span><br><span class="line">    time.Sleep(time.Second)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> <span class="keyword">range</span> time.Tick(time.Millisecond * <span class="number">100</span>) &#123;</span><br><span class="line">        req, err := http.NewRequest(<span class="string">&quot;PUT&quot;</span>, <span class="string">&quot;http://localhost:8080&quot;</span>, io.LimitReader(infinite, <span class="number">65536</span>))</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;create request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        req.Header.Set(<span class="string">&quot;Expect&quot;</span>, <span class="string">&quot;100-continue&quot;</span>)</span><br><span class="line">        _, err = http.DefaultClient.Do(req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;do request failed: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+]]></content>
+      <tags>
+        <tag>Golang</tag>
       </tags>
   </entry>
   <entry>

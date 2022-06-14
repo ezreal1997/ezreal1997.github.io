@@ -35,7 +35,7 @@
 <meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png">
 <meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/workflow.png">
 <meta property="article:published_time" content="2022-06-14T01:47:27.000Z">
-<meta property="article:modified_time" content="2022-06-14T08:30:07.832Z">
+<meta property="article:modified_time" content="2022-06-14T08:54:31.292Z">
 <meta property="article:author" content="ezreal">
 <meta property="article:tag" content="Paper">
 <meta property="article:tag" content="Cloud Native">
@@ -223,7 +223,7 @@
               <span class="post-meta-item-text">Posted on</span>
               
 
-              <time title="Created: 2022-06-14 09:47:27 / Modified: 16:30:07" itemprop="dateCreated datePublished" datetime="2022-06-14T09:47:27+08:00">2022-06-14</time>
+              <time title="Created: 2022-06-14 09:47:27 / Modified: 16:54:31" itemprop="dateCreated datePublished" datetime="2022-06-14T09:47:27+08:00">2022-06-14</time>
             </span>
 
           
@@ -275,7 +275,7 @@
 <p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/compaction.png" alt="Drange Compaction"></p>
 <p>LTC 会有一个 coordinator thread 来进行 compaction 任务的调度，把热点 StoC 节点上的任务分发给别的空闲的 StoC 节点。存储节点首先 prefetch 所有 compaction job 中的 SSTable 到 memory 中，合并完后新的 SSTable 可能会写到本地或是其他存储节点上。compaction 完成后，存储节点会向 coordinator thread 返回所有包含新生成的 SSTable 列表，由其负责删除原来的 SSTable 并更新元数据文件。</p>
 <h2 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h2><h3 id="Get"><a href="#Get" class="headerlink" title="Get"></a>Get</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/lookup.png" alt="lookup index"></p>
-<p>每个 LTC 会维护一个 lookup index，来维护 key 的最新 value 具体保存在哪个 level0 的 SSTable 或者 memtable。如果 index 中没有相关记录才去查询更高 level 的S STable。并且 LTC 为每个 SStable 在内存中维护 bloom filter 来剪枝。除此之外更高 level 的 SSTable 的查询操作也可以并行化。</p>
+<p>每个 LTC 会维护一个 lookup index，来维护 key 的最新 value 具体保存在哪个 level0 的 SSTable 或者 memtable。如果 index 中没有相关记录才去查询更高 level 的 SSTable。并且 LTC 为每个 SSTable 在内存中维护 bloom filter 来剪枝。除此之外更高 level 的 SSTable 的查询操作也可以并行化。</p>
 <p>当写操作插入一条新数据到 memtable m 的时候，会更新 &lt;key, mid&gt; 映射，mid 用来唯一标记一个 memtable。LTC 会额外维护一个映射结构：MIDToTable，维护 mid 到一个 memtable 的指针或者 level0 的 SSTable 的 file number。<br>当 compaction 操作将 immutable memtable 从 sstable flush 到 StoC 的时候，就会原子更新这个 MIDToTable 结构中 mid 到 SSTable file number的映射，同时把对应的指向 memtable 的指针设为无效。</p>
 <h3 id="Scan"><a href="#Scan" class="headerlink" title="Scan"></a>Scan</h3><p>为每个 Drange 的 memtable 和 level0 SSTable 维护 range index，scan 时进行二分查找定位到相应分区，并依次 scan level1+ 的 range。</p>
 <h3 id="Placement"><a href="#Placement" class="headerlink" title="Placement"></a>Placement</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png" alt="SSTable Placement"></p>
