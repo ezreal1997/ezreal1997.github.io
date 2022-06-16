@@ -1,59 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
-    <title>[SIGMOD 2021] FoundationDB: A Distributed Unbundled Transactional Key Value Store</title>
-    <url>/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/</url>
-    <content><![CDATA[<p>FoundationDB 和传统的 key value store 相比，一方面在存储层实现的是强一致 ACID，另一方面通过可扩展的方式支持更多数据模型，并发控制采用 OCC 同时不支持超过 5s 的长事务。</p>
-<span id="more"></span>
-
-<h2 id="整体架构"><a href="#整体架构" class="headerlink" title="整体架构"></a>整体架构</h2><p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/arch.png" alt="架构"></p>
-<p>FoundationDB 架构的核心是<strong>松耦合</strong>，整体可以分为 Control Plane 和 Data Plane 两个模块。</p>
-<ul>
-<li>Control Plane 负责系统的管理和监控，使用 Active Disk Paxos 保证高可用性，并选举出单个的 Cluster Controller，controller 会创建另外几个单实例进程：Data Distributor，Rate Keeper，Sequencer<ul>
-<li>Sequencer 负责给事务分发 read version 和 commit version</li>
-<li>Data Distributor 负责监控 Storage Server 集群状态以及负载均衡</li>
-<li>Rate Keeper 负责流控，避免系统 overload</li>
-</ul>
-</li>
-<li>Data Plane 负责用户和系统数据的存储，其中 Transaction System 负责处理写请求，Storage System 负责处理读请求，不同系统之间完全解耦，同时可以各自独立扩展<ul>
-<li>TS 层负责事务处理，由 Sequencer 创建 Proxy &#x2F; Resolver，整个 TS 层是无状态的，便于发生 failure 时，快速整体重启</li>
-<li>LS 层负责 WAL 的存储，按照 key range 做分片存储，且每个分片有多个副本</li>
-<li>SS 层负责实际数据的存储，和 LS 的分片对应，每个分片有自己的 WAL 日志，底层目前使用的是 SQLite，后续会考虑Rocksdb</li>
-</ul>
-</li>
-</ul>
-<h2 id="事务处理"><a href="#事务处理" class="headerlink" title="事务处理"></a>事务处理</h2><p>FoundationDB 利用 OCC + MVCC 的策略来实现串行化事务。</p>
-<ul>
-<li>读请求<br>client 连接 Proxy，获取读时间戳，Proxy 向 Sequencer 获取 read version 并返回 client，client 利用 read version 从 storage server 直接读取目标版本数据，在本地进行物化并缓存</li>
-<li>写请求<br>事务提交时带着 read set + write set 发给 Proxy，Proxy 首先向 Sequencer 获取 commit version，然后发送给 Resolver做冲突检测（Resovler 也是根据 key range 分片启动多个实例，这样可以并发做冲突检测）</li>
-</ul>
-<p>FDB 实现的是可串行化事务，commit version 的顺序就是事务提交顺序，因此可以认为事务需要在 commit 点瞬时完成，冲突检测就是判断在 (read version, commit version) 之间，是否并发事务写入了冲突的数据。其中 Resolver 的冲突检测算法如下图所示：</p>
-<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/conflict_detect.png" alt="冲突检测算法"></p>
-<p>为了提高冲突检测效率，Resolver 使用 skiplist 维护数据的 LastCommit 信息，即修改的 key range -&gt; commit version 的映射，记录 key range 最近一次的 commit version，便于找到对某个 key&#x2F;key-range 最近一次 commit version 是否在当前事务的 (read version, commit version)之间，不冲突即用当前事务的 commit version 更新 LastCommit。</p>
-<p>这里有一个问题，由于是多个 Resovler 并发检测冲突，可能一些 Resolver 局部认为是无冲突的，因此更新了自己维护的LastCommit 结构，导致后续不应该失败的事务发生冲突(false-positive）。FDB认为这不是大问题，首先它面向多租户应用，冲突较少，一般事务都会落入一个 Resovler。此外即使失败后重试，新的事务的 read version 增长后，超过这个伪提交事务的 commit version 即可。</p>
-<p>除了 read-write 事务，还有 read-only 事务，只获取 read version 从 SS 读取数据，然后 client 直接提交就可以，等同于在 read version 瞬时完成，不需要检测冲突。 此外在 read-write 事务中还允许进行 snapshot read，这种 read 不放入 read set 中，不做冲突检测。</p>
-<p>所有 Resovler 返回成功时，Proxy 认为事务可以提交，向 LogServer 发送 WAL 进行多副本同步复制，日志落盘后 Proxy 认为事务提交成功，返回给 client。同时 Storage Server 异步的从 LS 获取 log entry 并 apply，即使log entry 还没有落盘也会 apply，FDB 通过采用这种激进的物化策略来保证 data 和 log 之间的低延迟。</p>
-<p>可串行化的并发控制使得 log entry 之间形成了严格的顺序，大大简化了 log 管理的逻辑，可以用 version 来表示 LSN，针对每个 key，它所对应的实际是一个有序的 log entry 队列，依次 apply 就可以物化成最新版本。</p>
-<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/logsync.png" alt="Proxy 写 log 流程"></p>
-<p>Proxy 本地有缓存一份 key range -&gt; SS 的映射关系，这样就可以知道要写入哪些 SS 和对应的 LS。例如上图中，LS1 + LS4 是要写入的 LS，由于是3副本，需要再额外写一个 LS，其余的 LS 也要发送，但只传递 Log Header，其中包含的最主要信息是当前的 LSN 和 Proxy 上的 KCV，即本 Proxy 已知的最大已提交事务，LS 收到后会更新自己本地的 KCV，这个 KCV 在 recovery 时会使用。</p>
-<p>LS 上的 WAL -&gt; SS 和 apply redo 并不在 commit 流程中，是异步持续完成，因此可以说 FDB 也遵循了 ‘log is data’ 的思想。这种方式 client 做 read 一般可以读到目标 version 的数据，如果不行就等待或者向其他副本请求，都不行的话，可以超时后重试。<br>由于是异步 apply，可以做 batching，将一批更新缓存在 SS 上，批量刷盘提高 IO 效率。但这里也有个问题，由于 LS 中在内存中（未提交）的 entry 也可能被apply，因此 SS 是有脏数据的，在 recovery 时要 rollback。</p>
-<h2 id="数据可靠性"><a href="#数据可靠性" class="headerlink" title="数据可靠性"></a>数据可靠性</h2><p>FDB 由于 redo log apply 是在后台持续进行的，因此本质上它将 redo apply 从 recovery 中解耦出来，等于持续在 checkpointing，在 recovery 期间不需要做 redo apply，只是确认当前的 log 序列需要恢复到哪个位置即可，后续基于 log -&gt; data 的过程仍然是异步，以此保证了 recovery 的速度。</p>
-<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/recovery.png" alt="FDB Recovery"></p>
-<p>发现 failure 后，旧的 Sequencer 退出，新 Sequencer 启动，并从 Coordinator 获取老的 TS 的配置信息，包括旧的 LS 的位置等，同时给 Coordinator 加个全局锁，避免并发 recovery，然后关闭老的 LS，禁止接收新的 log 写入，开始恢复，恢复完成后启动 TS 接收用户请求。</p>
-<p>Proxy 和 Resolver 都是 stateless 的，直接重启即可，只有 LogServer 有 log 信息。由于在日常提交写日志时，Proxy 会把本地记录的 KCV 广播给所有 LS，LS 中就记录了自己见过的最大的 KCV。选取所有 LS 中 KCV 的最大值，在这个值之前的事务，其日志已经完全复制并落盘，且已告知 Proxy，可以作为上一个 epoch 的终点，称为 PEV（previous epoch’s end version）。</p>
-<p>同时每个 LogServer 都记录了本地已持久化的 version (DV)，选取所有 DV 中的最小值，作为 Recovery Version(RV)，在 [PEV, RV] 之间的日志，已持久化且不在内存中，但不确定是否已提交（因为 Proxy 没有该信息，可能崩溃的那个没持久化），因此这部分需要进行恢复，而大于 RV 的 log entry，肯定没有多副本都持久化，因此不可能提交，这部分要undo。</p>
-<h2 id="优化"><a href="#优化" class="headerlink" title="优化"></a>优化</h2><ol>
-<li>Transaction batching<br>在 Proxy 上为了减少与 Sequencer&#x2F;LS 的交互成本，可以把不冲突的并发事务合并，获取同一个 commit version，并一起下发到 LogServer，相当于 group commit。<br>这个策略是可以自适应的，在系统负载不大时，为了减少延迟，可以减小 batch 大小，当系统重负载时，为了保证吞吐则可以加大 batch。</li>
-<li>Atomic operations<br>对于一些只写不读的操作，其相互之间可以不做冲突检测，直接获取提交时间戳就可以，这对于某些 counter 类型的操作会提高效率，因为避免了从 storage 的一次读，也避免了 resolve confilct。</li>
-</ol>
-]]></content>
-      <tags>
-        <tag>FoundationDB</tag>
-        <tag>Paper</tag>
-        <tag>OCC</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Centiman: Elastic, High Performance Optimistic Concurrency Control by Watermarking</title>
     <url>/2022/05/15/Centiman-Elastic-High-Performance-Optimistic-Concurrency-Control-by-Watermarking/</url>
     <content><![CDATA[<p>ACID over KVS</p>
@@ -126,6 +73,59 @@
       </tags>
   </entry>
   <entry>
+    <title>[SIGMOD 2021] FoundationDB: A Distributed Unbundled Transactional Key Value Store</title>
+    <url>/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/</url>
+    <content><![CDATA[<p>FoundationDB 和传统的 key value store 相比，一方面在存储层实现的是强一致 ACID，另一方面通过可扩展的方式支持更多数据模型，并发控制采用 OCC 同时不支持超过 5s 的长事务。</p>
+<span id="more"></span>
+
+<h2 id="整体架构"><a href="#整体架构" class="headerlink" title="整体架构"></a>整体架构</h2><p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/arch.png" alt="架构"></p>
+<p>FoundationDB 架构的核心是<strong>松耦合</strong>，整体可以分为 Control Plane 和 Data Plane 两个模块。</p>
+<ul>
+<li>Control Plane 负责系统的管理和监控，使用 Active Disk Paxos 保证高可用性，并选举出单个的 Cluster Controller，controller 会创建另外几个单实例进程：Data Distributor，Rate Keeper，Sequencer<ul>
+<li>Sequencer 负责给事务分发 read version 和 commit version</li>
+<li>Data Distributor 负责监控 Storage Server 集群状态以及负载均衡</li>
+<li>Rate Keeper 负责流控，避免系统 overload</li>
+</ul>
+</li>
+<li>Data Plane 负责用户和系统数据的存储，其中 Transaction System 负责处理写请求，Storage System 负责处理读请求，不同系统之间完全解耦，同时可以各自独立扩展<ul>
+<li>TS 层负责事务处理，由 Sequencer 创建 Proxy &#x2F; Resolver，整个 TS 层是无状态的，便于发生 failure 时，快速整体重启</li>
+<li>LS 层负责 WAL 的存储，按照 key range 做分片存储，且每个分片有多个副本</li>
+<li>SS 层负责实际数据的存储，和 LS 的分片对应，每个分片有自己的 WAL 日志，底层目前使用的是 SQLite，后续会考虑Rocksdb</li>
+</ul>
+</li>
+</ul>
+<h2 id="事务处理"><a href="#事务处理" class="headerlink" title="事务处理"></a>事务处理</h2><p>FoundationDB 利用 OCC + MVCC 的策略来实现串行化事务。</p>
+<ul>
+<li>读请求<br>client 连接 Proxy，获取读时间戳，Proxy 向 Sequencer 获取 read version 并返回 client，client 利用 read version 从 storage server 直接读取目标版本数据，在本地进行物化并缓存</li>
+<li>写请求<br>事务提交时带着 read set + write set 发给 Proxy，Proxy 首先向 Sequencer 获取 commit version，然后发送给 Resolver做冲突检测（Resovler 也是根据 key range 分片启动多个实例，这样可以并发做冲突检测）</li>
+</ul>
+<p>FDB 实现的是可串行化事务，commit version 的顺序就是事务提交顺序，因此可以认为事务需要在 commit 点瞬时完成，冲突检测就是判断在 (read version, commit version) 之间，是否并发事务写入了冲突的数据。其中 Resolver 的冲突检测算法如下图所示：</p>
+<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/conflict_detect.png" alt="冲突检测算法"></p>
+<p>为了提高冲突检测效率，Resolver 使用 skiplist 维护数据的 LastCommit 信息，即修改的 key range -&gt; commit version 的映射，记录 key range 最近一次的 commit version，便于找到对某个 key&#x2F;key-range 最近一次 commit version 是否在当前事务的 (read version, commit version)之间，不冲突即用当前事务的 commit version 更新 LastCommit。</p>
+<p>这里有一个问题，由于是多个 Resovler 并发检测冲突，可能一些 Resolver 局部认为是无冲突的，因此更新了自己维护的LastCommit 结构，导致后续不应该失败的事务发生冲突(false-positive）。FDB认为这不是大问题，首先它面向多租户应用，冲突较少，一般事务都会落入一个 Resovler。此外即使失败后重试，新的事务的 read version 增长后，超过这个伪提交事务的 commit version 即可。</p>
+<p>除了 read-write 事务，还有 read-only 事务，只获取 read version 从 SS 读取数据，然后 client 直接提交就可以，等同于在 read version 瞬时完成，不需要检测冲突。 此外在 read-write 事务中还允许进行 snapshot read，这种 read 不放入 read set 中，不做冲突检测。</p>
+<p>所有 Resovler 返回成功时，Proxy 认为事务可以提交，向 LogServer 发送 WAL 进行多副本同步复制，日志落盘后 Proxy 认为事务提交成功，返回给 client。同时 Storage Server 异步的从 LS 获取 log entry 并 apply，即使log entry 还没有落盘也会 apply，FDB 通过采用这种激进的物化策略来保证 data 和 log 之间的低延迟。</p>
+<p>可串行化的并发控制使得 log entry 之间形成了严格的顺序，大大简化了 log 管理的逻辑，可以用 version 来表示 LSN，针对每个 key，它所对应的实际是一个有序的 log entry 队列，依次 apply 就可以物化成最新版本。</p>
+<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/logsync.png" alt="Proxy 写 log 流程"></p>
+<p>Proxy 本地有缓存一份 key range -&gt; SS 的映射关系，这样就可以知道要写入哪些 SS 和对应的 LS。例如上图中，LS1 + LS4 是要写入的 LS，由于是3副本，需要再额外写一个 LS，其余的 LS 也要发送，但只传递 Log Header，其中包含的最主要信息是当前的 LSN 和 Proxy 上的 KCV，即本 Proxy 已知的最大已提交事务，LS 收到后会更新自己本地的 KCV，这个 KCV 在 recovery 时会使用。</p>
+<p>LS 上的 WAL -&gt; SS 和 apply redo 并不在 commit 流程中，是异步持续完成，因此可以说 FDB 也遵循了 ‘log is data’ 的思想。这种方式 client 做 read 一般可以读到目标 version 的数据，如果不行就等待或者向其他副本请求，都不行的话，可以超时后重试。<br>由于是异步 apply，可以做 batching，将一批更新缓存在 SS 上，批量刷盘提高 IO 效率。但这里也有个问题，由于 LS 中在内存中（未提交）的 entry 也可能被apply，因此 SS 是有脏数据的，在 recovery 时要 rollback。</p>
+<h2 id="数据可靠性"><a href="#数据可靠性" class="headerlink" title="数据可靠性"></a>数据可靠性</h2><p>FDB 由于 redo log apply 是在后台持续进行的，因此本质上它将 redo apply 从 recovery 中解耦出来，等于持续在 checkpointing，在 recovery 期间不需要做 redo apply，只是确认当前的 log 序列需要恢复到哪个位置即可，后续基于 log -&gt; data 的过程仍然是异步，以此保证了 recovery 的速度。</p>
+<p><img src="/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/recovery.png" alt="FDB Recovery"></p>
+<p>发现 failure 后，旧的 Sequencer 退出，新 Sequencer 启动，并从 Coordinator 获取老的 TS 的配置信息，包括旧的 LS 的位置等，同时给 Coordinator 加个全局锁，避免并发 recovery，然后关闭老的 LS，禁止接收新的 log 写入，开始恢复，恢复完成后启动 TS 接收用户请求。</p>
+<p>Proxy 和 Resolver 都是 stateless 的，直接重启即可，只有 LogServer 有 log 信息。由于在日常提交写日志时，Proxy 会把本地记录的 KCV 广播给所有 LS，LS 中就记录了自己见过的最大的 KCV。选取所有 LS 中 KCV 的最大值，在这个值之前的事务，其日志已经完全复制并落盘，且已告知 Proxy，可以作为上一个 epoch 的终点，称为 PEV（previous epoch’s end version）。</p>
+<p>同时每个 LogServer 都记录了本地已持久化的 version (DV)，选取所有 DV 中的最小值，作为 Recovery Version(RV)，在 [PEV, RV] 之间的日志，已持久化且不在内存中，但不确定是否已提交（因为 Proxy 没有该信息，可能崩溃的那个没持久化），因此这部分需要进行恢复，而大于 RV 的 log entry，肯定没有多副本都持久化，因此不可能提交，这部分要undo。</p>
+<h2 id="优化"><a href="#优化" class="headerlink" title="优化"></a>优化</h2><ol>
+<li>Transaction batching<br>在 Proxy 上为了减少与 Sequencer&#x2F;LS 的交互成本，可以把不冲突的并发事务合并，获取同一个 commit version，并一起下发到 LogServer，相当于 group commit。<br>这个策略是可以自适应的，在系统负载不大时，为了减少延迟，可以减小 batch 大小，当系统重负载时，为了保证吞吐则可以加大 batch。</li>
+<li>Atomic operations<br>对于一些只写不读的操作，其相互之间可以不做冲突检测，直接获取提交时间戳就可以，这对于某些 counter 类型的操作会提高效率，因为避免了从 storage 的一次读，也避免了 resolve confilct。</li>
+</ol>
+]]></content>
+      <tags>
+        <tag>OCC</tag>
+        <tag>FoundationDB</tag>
+        <tag>Paper</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>FoundationDB Record Layer: A Multi-Tenant Structured Datastore</title>
     <url>/2022/06/13/FoundationDB-Record-Layer-A-Multi-Tenant-Structured-Datastore/</url>
     <content><![CDATA[<p>FoundationDB Record Layer 是建立在 FoundationDB 之上的类关系模型的结构化数据层，支持多租户，以 library 方式提供给应用，目前没有实现 SQL。</p>
@@ -151,9 +151,9 @@
 <p>这两者类似一个拦截器，拦截每一个 record 的变化信息，生成相应的 key-value。只要经过 key expression 和 index maintanance 生成的 key-value，在 FoundationDB Record Layer 里都被称为“索引”。</p>
 ]]></content>
       <tags>
+        <tag>OCC</tag>
         <tag>FoundationDB</tag>
         <tag>Paper</tag>
-        <tag>OCC</tag>
       </tags>
   </entry>
   <entry>
@@ -624,15 +624,6 @@
       </tags>
   </entry>
   <entry>
-    <title>Paper accepted by VLDB 2022</title>
-    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
-    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
-]]></content>
-      <tags>
-        <tag>Publication</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>OCC 当前研究</title>
     <url>/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/</url>
     <content><![CDATA[<h3 id="内存数据库"><a href="#内存数据库" class="headerlink" title="内存数据库"></a>内存数据库</h3><ul>
@@ -805,6 +796,15 @@
       </tags>
   </entry>
   <entry>
+    <title>Paper accepted by VLDB 2022</title>
+    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
+    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
+]]></content>
+      <tags>
+        <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Postgres 现存问题</title>
     <url>/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/</url>
     <content><![CDATA[<p>原文见 <a href="https://rbranson.medium.com/10-things-i-hate-about-postgresql-20dbab8c2791">10 Things I Hate About PostgreSQL</a></p>
@@ -909,11 +909,11 @@
     <content><![CDATA[<p>Nova-LSM 是一个存算分离的 LSM key-value store，计算和存储分为不同的组件并通过 RDMA 通信。整体包含 LSM-tree Component (LTC), Logging Component (LogC) 和 Storage Component (StoC) 这三个模块，LTC 和 LogC 都通过 StoC 存储数据。</p>
 <span id="more"></span>
 
-<h2 id="架构"><a href="#架构" class="headerlink" title="架构"></a>架构</h2><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png" alt="系统架构"></p>
+<h2 id="架构"><a href="#架构" class="headerlink" title="架构"></a>架构</h2><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png" alt="系统架构"></p>
 <p>基于 RDMA 网络将 LSM 进行存算分离，每个 LTC 负责处理某些 key range 的请求，LogC 用于记录日志，StoC 负责存储 SSTable 和日志文件。</p>
 <p>每个 LTC 为存储数据划分若干个 range，每个 range 由 LSM Tree 维护。range 和 LTC 的映射关系是动态调整的，在 Coordiantor 中保存，使用 lease 机制进行并发控制，同时使用 zookeeper 实现高可用。每个 range 包含了多个 Drange，每个 Drange 又有多个连续的 Trange。每个 Trange 的大小可以是不同的，根据负载分布进行调整，可以通过迁移 Drange 和 Trange 进行负载均衡（minor reorganization），在严重负载不均的情况下会重新计算 Trange 和 Drange（major reorganization）。在迁移时只需要通过 RDMA READ 从 StoC 读取日志记录构建 memtable 即可。</p>
 <h3 id="RDMA"><a href="#RDMA" class="headerlink" title="RDMA"></a>RDMA</h3><p>传统的网卡上做服务端之间的数据通信，首先 CPU 要把数据从用户空间拷贝一份到内核空间的 socket buffer 中，然后内核的 TCP&#x2F;IP 协议栈给数据添加头部和校验信息，物理层的网卡通过 DMA 从内核中 copy 数据后在发送到别的服务器的网卡上。<br>而 RDMA 简单来说就是省去了数据从用户态拷贝到内核态的步骤，不需要 CPU 参与，报文的组装和解析在硬件层完成。而对于数据库系统加速来说，通常使用的是 READ&#x2F;WRITE 的语义，两个 server 之间通过一对分别在 server 的队列（QP）进行异步通信。</p>
-<h3 id="线程模型"><a href="#线程模型" class="headerlink" title="线程模型"></a>线程模型</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/thread.png" alt="线程模型"></p>
+<h3 id="线程模型"><a href="#线程模型" class="headerlink" title="线程模型"></a>线程模型</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/thread.png" alt="线程模型"></p>
 <p>LTC 有四种线程：</p>
 <ul>
 <li>client worker thread: 接受外界请求</li>
@@ -927,7 +927,7 @@
 <li>compaction thread: 进行 SSTable 的 compaction 操作与文件的落盘</li>
 <li>storage thread: 负责 block 数据的读写</li>
 </ul>
-<h3 id="Drange"><a href="#Drange" class="headerlink" title="Drange"></a>Drange</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/drange.png" alt="Drange"></p>
+<h3 id="Drange"><a href="#Drange" class="headerlink" title="Drange"></a>Drange</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/drange.png" alt="Drange"></p>
 <p>LTC 在内存中维护了大量的 memtable 使得大量插入数据都可以暂时存储在内存中减少对磁盘的 IO 压力，但这也带来了几个挑战：</p>
 <ol>
 <li>immutable memtable 落盘后直接就是 level0 的 SSTable，那么这也意味着 level0 的 SSTable 数量也会相应增多，导致 compaction 到 level1+ 的时候造成的写放大会更严重</li>
@@ -941,16 +941,16 @@
 <li>major reorg<br>通过采样的写入负载频率数据来重新构建 Dranges 和 Tranges</li>
 </ul>
 <p>如果某个 key 是一个写入热点，那么 Drange 可以为这个单点的 range 做 duplicate，写入操作可以写到任意一个 Drange下的 memtable 中，减少了由同步写入一个 memtable 产生的开销，也分摊了单个 Drange 的写入负载压力。</p>
-<p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/compaction.png" alt="Drange Compaction"></p>
-<p>LTC 会有一个 coordinator thread 来进行 compaction 任务的调度，把热点 StoC 节点上的任务分发给别的空闲的 StoC 节点。存储节点首先 prefetch 所有 compaction job 中的 SSTable 到 memory 中，合并完后新的 SSTable 可能会写到本地或是其他存储节点上。compaction 完成后，存储节点会向 coordinator thread 返回所有包含新生成的 SSTable 列表，由其负责删除原来的 SSTable 并更新元数据文件。</p>
-<h2 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h2><h3 id="Get"><a href="#Get" class="headerlink" title="Get"></a>Get</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/lookup.png" alt="lookup index"></p>
+<p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/compaction.png" alt="Drange Compaction"></p>
+<p>LTC 会有一个 compaction thread 来进行 compaction 任务的调度，把热点 StoC 节点上的任务分发给别的空闲的 StoC 节点。存储节点首先 prefetch 所有 compaction job 中的 SSTable 到 memory 中，合并完后新的 SSTable 可能会写到本地或是其他存储节点上。compaction 完成后，存储节点会向 compaction thread 返回所有包含新生成的 SSTable 列表，由其负责删除原来的 SSTable 并更新元数据文件。</p>
+<h2 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h2><h3 id="Get"><a href="#Get" class="headerlink" title="Get"></a>Get</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/lookup.png" alt="lookup index"></p>
 <p>每个 LTC 会维护一个 lookup index，来维护 key 的最新 value 具体保存在哪个 level0 的 SSTable 或者 memtable。如果 index 中没有相关记录才去查询更高 level 的 SSTable。并且 LTC 为每个 SSTable 在内存中维护 bloom filter 来剪枝。除此之外更高 level 的 SSTable 的查询操作也可以并行化。</p>
 <p>当写操作插入一条新数据到 memtable m 的时候，会更新 &lt;key, mid&gt; 映射，mid 用来唯一标记一个 memtable。LTC 会额外维护一个映射结构：MIDToTable，维护 mid 到一个 memtable 的指针或者 level0 的 SSTable 的 file number。<br>当 compaction 操作将 immutable memtable 从 sstable flush 到 StoC 的时候，就会原子更新这个 MIDToTable 结构中 mid 到 SSTable file number的映射，同时把对应的指向 memtable 的指针设为无效。</p>
 <h3 id="Scan"><a href="#Scan" class="headerlink" title="Scan"></a>Scan</h3><p>为每个 Drange 的 memtable 和 level0 SSTable 维护 range index，scan 时进行二分查找定位到相应分区，并依次 scan level1+ 的 range。</p>
-<h3 id="Placement"><a href="#Placement" class="headerlink" title="Placement"></a>Placement</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png" alt="SSTable Placement"></p>
+<h3 id="Placement"><a href="#Placement" class="headerlink" title="Placement"></a>Placement</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png" alt="SSTable Placement"></p>
 <p>SSTable 被划分为更小的粒度 data fragment 在不同的存储节点中存储，Nova-LSM 采用 power-of-d (The Power of Two Random Choices) 的分片策略，假设 SST 被分成 p 个 fragment，LTC 则在 2 * p 个随机挑选出的节点中选择 disk io queue 最短的 p 个节点。随后 p 个 fragment 将会并行写入到不同的存储节点中，同时写入 index 和 bloom filter block 到存储节点中。</p>
 <p>为了保证可用性，data fragment 会构建一个 <code>parity block</code> 存储到不同的存储节点中。并且通过对 SST 的 metadata block 进行 replication 来保证高可用，读取请求可以从任意的 replica 中读取 metadata block。</p>
-<h3 id="Write"><a href="#Write" class="headerlink" title="Write"></a>Write</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/workflow.png" alt="write workflow"></p>
+<h3 id="Write"><a href="#Write" class="headerlink" title="Write"></a>Write</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/workflow.png" alt="write workflow"></p>
 <p>data fragment 写入 StoC 文件中的流程：</p>
 <ol>
 <li>client 发送写请求打开一个新的 StoC 文件</li>
@@ -966,7 +966,7 @@
 <li>RocksDB*: 64 RocksDB instances per server</li>
 <li>RocksDB-tuned: One RocksDB instance per server with tuned knobs</li>
 </ul>
-<p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/exp.png" alt="性能测试"></p>
+<p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/exp.png" alt="性能测试"></p>
 <ul>
 <li>Drange 对写入热点场景优化明显</li>
 <li>lookup index 对读取最新版本数据优化明显</li>
@@ -986,6 +986,62 @@
 ]]></content>
       <tags>
         <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>UUID</title>
+    <url>/2022/05/15/UUID/</url>
+    <content><![CDATA[<h3 id="UUID-特点"><a href="#UUID-特点" class="headerlink" title="UUID 特点"></a>UUID 特点</h3><ul>
+<li><p>经由一定的算法机器生成<br>为了保证UUID的唯一性，规范定义了包括网卡MAC地址、时间戳、名字空间（Namespace）、随机或伪随机数、时序等元素，以及从这些元素生成UUID的算法。UUID的复杂特性在保证了其唯一性的同时，意味着只能由计算机生成。</p>
+</li>
+<li><p>非人工指定，非人工识别<br>UUID是不能人工指定的，除非你冒着UUID重复的风险。UUID的复杂性决定了“一般人“不能直接从一个UUID知道哪个对象和它关联。</p>
+</li>
+<li><p>在特定的范围内重复的可能性极小<br>UUID的生成规范定义的算法主要目的就是要保证其唯一性。但这个唯一性是有限的，只在特定的范围内才能得到保证，这和UUID的类型有关（参见UUID的版本）。</p>
+</li>
+</ul>
+<span id="more"></span>
+
+<h3 id="Nil-UUID"><a href="#Nil-UUID" class="headerlink" title="Nil UUID"></a>Nil UUID</h3><p>通常我们不会用到它，它是由全为0的数字组成，如下：<br>00000000-0000-0000-0000-000000000000</p>
+<h3 id="UUID-Version-1：基于时间的UUID"><a href="#UUID-Version-1：基于时间的UUID" class="headerlink" title="UUID Version 1：基于时间的UUID"></a>UUID Version 1：基于时间的UUID</h3><p>基于时间的UUID通过计算当前时间戳、随机数和机器MAC地址得到。由于在算法中使用了MAC地址，这个版本的UUID可以保证在全球范围的唯一性。但与此同时，使用MAC地址会带来安全性问题，这就是这个版本UUID受到批评的地方。如果应用只是在局域网中使用，也可以使用退化的算法，以IP地址来代替MAC地址－－Java的UUID往往是这样实现的（当然也考虑了获取MAC的难度）。</p>
+<h3 id="UUID-Version-2：DCE安全的UUID"><a href="#UUID-Version-2：DCE安全的UUID" class="headerlink" title="UUID Version 2：DCE安全的UUID"></a>UUID Version 2：DCE安全的UUID</h3><p>DCE（Distributed Computing Environment）安全的UUID和基于时间的UUID算法相同，但会把时间戳的前4位置换为POSIX的UID或GID。这个版本的UUID在实际中较少用到。</p>
+<h3 id="UUID-Version-3：基于名字的UUID（MD5）"><a href="#UUID-Version-3：基于名字的UUID（MD5）" class="headerlink" title="UUID Version 3：基于名字的UUID（MD5）"></a>UUID Version 3：基于名字的UUID（MD5）</h3><p>基于名字的UUID通过计算名字和名字空间的MD5散列值得到。这个版本的UUID保证了：相同名字空间中不同名字生成的UUID的唯一性；不同名字空间中的UUID的唯一性；相同名字空间中相同名字的UUID重复生成是相同的。</p>
+<h3 id="UUID-Version-4：随机UUID"><a href="#UUID-Version-4：随机UUID" class="headerlink" title="UUID Version 4：随机UUID"></a>UUID Version 4：随机UUID</h3><p>根据随机数，或者伪随机数生成UUID。这种UUID产生重复的概率是可以计算出来的，但随机的东西就像是买彩票：你指望它发财是不可能的，但狗屎运通常会在不经意中到来。</p>
+<h3 id="UUID-Version-5：基于名字的UUID（SHA1）"><a href="#UUID-Version-5：基于名字的UUID（SHA1）" class="headerlink" title="UUID Version 5：基于名字的UUID（SHA1）"></a>UUID Version 5：基于名字的UUID（SHA1）</h3><p>和版本3的UUID算法类似，只是散列值计算使用SHA1（Secure Hash Algorithm 1）算法。</p>
+<h3 id="UUID-应用"><a href="#UUID-应用" class="headerlink" title="UUID 应用"></a>UUID 应用</h3><p>Version 1&#x2F;2 适合应用于分布式计算环境下，具有高度的唯一性。<br>Version 3&#x2F;5 适合于一定范围内名字唯一，且需要或可能会重复生成UUID的环境下。<br>Version 4 是最简单最方便的，理论碰撞概率非常低。</p>
+<p>通常使用 UUID Version 4，只有在需要特殊性质的时候选择别的：</p>
+<ul>
+<li>可按时间排序（<a href="https://github.com/ulid/spec">ULID 1</a> )</li>
+<li>encode 特殊信息（feature store &#x2F; seaweed id）</li>
+<li>长度&#x2F;编码效率（<a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake.html">Twitter Snowflake 2</a>）</li>
+</ul>
+<p>UUID 一般来标识对象或持久化数据，但以下情况最好不使用UUID：</p>
+<ul>
+<li><p>映射类型的对象。比如只有代码及名称的代码表。</p>
+</li>
+<li><p>人工维护的非系统生成对象。比如系统中的部分基础数据。</p>
+</li>
+<li><p>对于具有名称不可重复的自然特性的对象，最好使用 Version 3&#x2F;5 的 UUID。比如系统中的用户。如果用户的 UUID 是 Version 1 的，如果你不小心删除了再重建用户，你会发现人还是那个人，用户已经不是那个用户了。（虽然标记为删除状态也是一种解决方案，但会带来实现上的复杂性。）</p>
+</li>
+</ul>
+<h3 id="Twitter-Snowflake"><a href="#Twitter-Snowflake" class="headerlink" title="Twitter Snowflake"></a>Twitter Snowflake</h3><p>Twitter-Snowflake 算法产生的背景相当简单，为了满足Twitter每秒上万条消息的请求，每条消息都必须分配一条唯一的id，这些id还需要一些大致的顺序（方便客户端排序），并且在分布式系统中不同机器产生的id必须不同。</p>
+<h4 id="Snowflake算法核心"><a href="#Snowflake算法核心" class="headerlink" title="Snowflake算法核心"></a>Snowflake算法核心</h4><p>把<strong>时间戳</strong>，<strong>工作机器id</strong>，<strong>序列号</strong>组合在一起。</p>
+<p>无用（1bit）+ 时间戳（41bit）+ 工作机器ID（10bit）+ 序列号（12bit）</p>
+<p>除了最高位bit标记为不可用以外，其余三组bit占位均可浮动，看具体的业务需求而定。<strong>默认情况下41bit的时间戳可以支持该算法使用到2082年，10bit的工作机器id可以支持1023台机器，序列号支持1毫秒产生4095个自增序列id</strong>。</p>
+<h4 id="Snowflake-–-时间戳"><a href="#Snowflake-–-时间戳" class="headerlink" title="Snowflake – 时间戳"></a>Snowflake – 时间戳</h4><p>这里时间戳的细度是毫秒级，具体代码如下，建议使用64位linux系统机器，因为有<a href="http://man7.org/linux/man-pages/man7/vdso.7.html">vdso</a>，gettimeofday()在用户态就可以完成操作，减少了进入内核态的损耗。</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">generateStamp</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    timeval tv;</span><br><span class="line">    <span class="built_in">gettimeofday</span>(&amp;tv, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">return</span> (<span class="type">uint64_t</span>)tv.tv_sec * <span class="number">1000</span> + (<span class="type">uint64_t</span>)tv.tv_usec / <span class="number">1000</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>默认情况下有41个bit可以供使用，那么一共有T（2 ^ 41）毫秒供你使用分配，年份 &#x3D; T &#x2F; (3600 * 24 * 365 * 1000) &#x3D; 69.7年。如果你只给时间戳分配39个bit使用，那么根据同样的算法最后年份 &#x3D; 17.4年。</p>
+<h4 id="Snowflake-–-工作机器id"><a href="#Snowflake-–-工作机器id" class="headerlink" title="Snowflake – 工作机器id"></a>Snowflake – 工作机器id</h4><p>严格意义上来说这个bit段的使用可以是进程级，<strong>机器级的话你可以使用MAC地址来唯一标示工作机器</strong>，<strong>工作进程级可以使用IP+Path来区分工作进程</strong>。如果工作机器比较少，可以使用配置文件来设置这个id是一个不错的选择，如果机器过多配置文件的维护是一个灾难性的事情。</p>
+<p>这里的解决方案是需要一个工作id分配的进程，可以使用自己编写一个简单进程来记录分配id，或者利用Mysql auto_increment机制也可以达到效果。</p>
+<p>工作进程与工作id分配器只是在工作进程启动的时候交互一次，然后工作进程可以自行将分配的id数据落文件，下一次启动直接读取文件里的id使用。</p>
+<p>PS：这个工作机器id的bit段也可以进一步拆分，比如用前5个bit标记进程id，后5个bit标记线程id之类。</p>
+<h4 id="Snowflake-–-序列号"><a href="#Snowflake-–-序列号" class="headerlink" title="Snowflake – 序列号"></a>Snowflake – 序列号</h4><p>序列号就是一系列的自增id（多线程建议使用atomic），为了处理在同一毫秒内需要给多条消息分配id，若同一毫秒把序列号用完了，则“等待至下一毫秒”。</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">waitNextMs</span><span class="params">(<span class="type">uint64_t</span> lastStamp)</span> </span>&#123;</span><br><span class="line">    <span class="type">uint64_t</span> cur = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">        cur = <span class="built_in">generateStamp</span>();</span><br><span class="line">    &#125; <span class="keyword">while</span> (cur &lt;= lastStamp);</span><br><span class="line">    <span class="keyword">return</span> cur;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>总体来说，是一个很高效很方便的GUID产生算法，一个int64_t字段就可以胜任，不像现在主流128bit的GUID算法，即使无法保证严格的id序列性，但是对于特定的业务，比如用做游戏服务器端的GUID产生会很方便。另外，在多线程的环境下，序列号使用atomic可以在代码实现上有效减少锁的密度。</p>
+]]></content>
+      <tags>
+        <tag>Engineering</tag>
       </tags>
   </entry>
   <entry>
@@ -1061,61 +1117,5 @@
     <url>/2022/04/10/hello-world/</url>
     <content><![CDATA[<p>Hello World!</p>
 ]]></content>
-  </entry>
-  <entry>
-    <title>UUID</title>
-    <url>/2022/05/15/UUID/</url>
-    <content><![CDATA[<h3 id="UUID-特点"><a href="#UUID-特点" class="headerlink" title="UUID 特点"></a>UUID 特点</h3><ul>
-<li><p>经由一定的算法机器生成<br>为了保证UUID的唯一性，规范定义了包括网卡MAC地址、时间戳、名字空间（Namespace）、随机或伪随机数、时序等元素，以及从这些元素生成UUID的算法。UUID的复杂特性在保证了其唯一性的同时，意味着只能由计算机生成。</p>
-</li>
-<li><p>非人工指定，非人工识别<br>UUID是不能人工指定的，除非你冒着UUID重复的风险。UUID的复杂性决定了“一般人“不能直接从一个UUID知道哪个对象和它关联。</p>
-</li>
-<li><p>在特定的范围内重复的可能性极小<br>UUID的生成规范定义的算法主要目的就是要保证其唯一性。但这个唯一性是有限的，只在特定的范围内才能得到保证，这和UUID的类型有关（参见UUID的版本）。</p>
-</li>
-</ul>
-<span id="more"></span>
-
-<h3 id="Nil-UUID"><a href="#Nil-UUID" class="headerlink" title="Nil UUID"></a>Nil UUID</h3><p>通常我们不会用到它，它是由全为0的数字组成，如下：<br>00000000-0000-0000-0000-000000000000</p>
-<h3 id="UUID-Version-1：基于时间的UUID"><a href="#UUID-Version-1：基于时间的UUID" class="headerlink" title="UUID Version 1：基于时间的UUID"></a>UUID Version 1：基于时间的UUID</h3><p>基于时间的UUID通过计算当前时间戳、随机数和机器MAC地址得到。由于在算法中使用了MAC地址，这个版本的UUID可以保证在全球范围的唯一性。但与此同时，使用MAC地址会带来安全性问题，这就是这个版本UUID受到批评的地方。如果应用只是在局域网中使用，也可以使用退化的算法，以IP地址来代替MAC地址－－Java的UUID往往是这样实现的（当然也考虑了获取MAC的难度）。</p>
-<h3 id="UUID-Version-2：DCE安全的UUID"><a href="#UUID-Version-2：DCE安全的UUID" class="headerlink" title="UUID Version 2：DCE安全的UUID"></a>UUID Version 2：DCE安全的UUID</h3><p>DCE（Distributed Computing Environment）安全的UUID和基于时间的UUID算法相同，但会把时间戳的前4位置换为POSIX的UID或GID。这个版本的UUID在实际中较少用到。</p>
-<h3 id="UUID-Version-3：基于名字的UUID（MD5）"><a href="#UUID-Version-3：基于名字的UUID（MD5）" class="headerlink" title="UUID Version 3：基于名字的UUID（MD5）"></a>UUID Version 3：基于名字的UUID（MD5）</h3><p>基于名字的UUID通过计算名字和名字空间的MD5散列值得到。这个版本的UUID保证了：相同名字空间中不同名字生成的UUID的唯一性；不同名字空间中的UUID的唯一性；相同名字空间中相同名字的UUID重复生成是相同的。</p>
-<h3 id="UUID-Version-4：随机UUID"><a href="#UUID-Version-4：随机UUID" class="headerlink" title="UUID Version 4：随机UUID"></a>UUID Version 4：随机UUID</h3><p>根据随机数，或者伪随机数生成UUID。这种UUID产生重复的概率是可以计算出来的，但随机的东西就像是买彩票：你指望它发财是不可能的，但狗屎运通常会在不经意中到来。</p>
-<h3 id="UUID-Version-5：基于名字的UUID（SHA1）"><a href="#UUID-Version-5：基于名字的UUID（SHA1）" class="headerlink" title="UUID Version 5：基于名字的UUID（SHA1）"></a>UUID Version 5：基于名字的UUID（SHA1）</h3><p>和版本3的UUID算法类似，只是散列值计算使用SHA1（Secure Hash Algorithm 1）算法。</p>
-<h3 id="UUID-应用"><a href="#UUID-应用" class="headerlink" title="UUID 应用"></a>UUID 应用</h3><p>Version 1&#x2F;2 适合应用于分布式计算环境下，具有高度的唯一性。<br>Version 3&#x2F;5 适合于一定范围内名字唯一，且需要或可能会重复生成UUID的环境下。<br>Version 4 是最简单最方便的，理论碰撞概率非常低。</p>
-<p>通常使用 UUID Version 4，只有在需要特殊性质的时候选择别的：</p>
-<ul>
-<li>可按时间排序（<a href="https://github.com/ulid/spec">ULID 1</a> )</li>
-<li>encode 特殊信息（feature store &#x2F; seaweed id）</li>
-<li>长度&#x2F;编码效率（<a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake.html">Twitter Snowflake 2</a>）</li>
-</ul>
-<p>UUID 一般来标识对象或持久化数据，但以下情况最好不使用UUID：</p>
-<ul>
-<li><p>映射类型的对象。比如只有代码及名称的代码表。</p>
-</li>
-<li><p>人工维护的非系统生成对象。比如系统中的部分基础数据。</p>
-</li>
-<li><p>对于具有名称不可重复的自然特性的对象，最好使用 Version 3&#x2F;5 的 UUID。比如系统中的用户。如果用户的 UUID 是 Version 1 的，如果你不小心删除了再重建用户，你会发现人还是那个人，用户已经不是那个用户了。（虽然标记为删除状态也是一种解决方案，但会带来实现上的复杂性。）</p>
-</li>
-</ul>
-<h3 id="Twitter-Snowflake"><a href="#Twitter-Snowflake" class="headerlink" title="Twitter Snowflake"></a>Twitter Snowflake</h3><p>Twitter-Snowflake 算法产生的背景相当简单，为了满足Twitter每秒上万条消息的请求，每条消息都必须分配一条唯一的id，这些id还需要一些大致的顺序（方便客户端排序），并且在分布式系统中不同机器产生的id必须不同。</p>
-<h4 id="Snowflake算法核心"><a href="#Snowflake算法核心" class="headerlink" title="Snowflake算法核心"></a>Snowflake算法核心</h4><p>把<strong>时间戳</strong>，<strong>工作机器id</strong>，<strong>序列号</strong>组合在一起。</p>
-<p>无用（1bit）+ 时间戳（41bit）+ 工作机器ID（10bit）+ 序列号（12bit）</p>
-<p>除了最高位bit标记为不可用以外，其余三组bit占位均可浮动，看具体的业务需求而定。<strong>默认情况下41bit的时间戳可以支持该算法使用到2082年，10bit的工作机器id可以支持1023台机器，序列号支持1毫秒产生4095个自增序列id</strong>。</p>
-<h4 id="Snowflake-–-时间戳"><a href="#Snowflake-–-时间戳" class="headerlink" title="Snowflake – 时间戳"></a>Snowflake – 时间戳</h4><p>这里时间戳的细度是毫秒级，具体代码如下，建议使用64位linux系统机器，因为有<a href="http://man7.org/linux/man-pages/man7/vdso.7.html">vdso</a>，gettimeofday()在用户态就可以完成操作，减少了进入内核态的损耗。</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">generateStamp</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    timeval tv;</span><br><span class="line">    <span class="built_in">gettimeofday</span>(&amp;tv, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">return</span> (<span class="type">uint64_t</span>)tv.tv_sec * <span class="number">1000</span> + (<span class="type">uint64_t</span>)tv.tv_usec / <span class="number">1000</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>默认情况下有41个bit可以供使用，那么一共有T（2 ^ 41）毫秒供你使用分配，年份 &#x3D; T &#x2F; (3600 * 24 * 365 * 1000) &#x3D; 69.7年。如果你只给时间戳分配39个bit使用，那么根据同样的算法最后年份 &#x3D; 17.4年。</p>
-<h4 id="Snowflake-–-工作机器id"><a href="#Snowflake-–-工作机器id" class="headerlink" title="Snowflake – 工作机器id"></a>Snowflake – 工作机器id</h4><p>严格意义上来说这个bit段的使用可以是进程级，<strong>机器级的话你可以使用MAC地址来唯一标示工作机器</strong>，<strong>工作进程级可以使用IP+Path来区分工作进程</strong>。如果工作机器比较少，可以使用配置文件来设置这个id是一个不错的选择，如果机器过多配置文件的维护是一个灾难性的事情。</p>
-<p>这里的解决方案是需要一个工作id分配的进程，可以使用自己编写一个简单进程来记录分配id，或者利用Mysql auto_increment机制也可以达到效果。</p>
-<p>工作进程与工作id分配器只是在工作进程启动的时候交互一次，然后工作进程可以自行将分配的id数据落文件，下一次启动直接读取文件里的id使用。</p>
-<p>PS：这个工作机器id的bit段也可以进一步拆分，比如用前5个bit标记进程id，后5个bit标记线程id之类。</p>
-<h4 id="Snowflake-–-序列号"><a href="#Snowflake-–-序列号" class="headerlink" title="Snowflake – 序列号"></a>Snowflake – 序列号</h4><p>序列号就是一系列的自增id（多线程建议使用atomic），为了处理在同一毫秒内需要给多条消息分配id，若同一毫秒把序列号用完了，则“等待至下一毫秒”。</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">uint64_t</span> <span class="title">waitNextMs</span><span class="params">(<span class="type">uint64_t</span> lastStamp)</span> </span>&#123;</span><br><span class="line">    <span class="type">uint64_t</span> cur = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">        cur = <span class="built_in">generateStamp</span>();</span><br><span class="line">    &#125; <span class="keyword">while</span> (cur &lt;= lastStamp);</span><br><span class="line">    <span class="keyword">return</span> cur;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>总体来说，是一个很高效很方便的GUID产生算法，一个int64_t字段就可以胜任，不像现在主流128bit的GUID算法，即使无法保证严格的id序列性，但是对于特定的业务，比如用做游戏服务器端的GUID产生会很方便。另外，在多线程的环境下，序列号使用atomic可以在代码实现上有效减少锁的密度。</p>
-]]></content>
-      <tags>
-        <tag>Engineering</tag>
-      </tags>
   </entry>
 </search>

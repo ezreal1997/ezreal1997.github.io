@@ -27,22 +27,22 @@
 <meta property="og:site_name" content="ezreal&#39;s blog">
 <meta property="og:description" content="Nova-LSM 是一个存算分离的 LSM key-value store，计算和存储分为不同的组件并通过 RDMA 通信。整体包含 LSM-tree Component (LTC), Logging Component (LogC) 和 Storage Component (StoC) 这三个模块，LTC 和 LogC 都通过 StoC 存储数据。">
 <meta property="og:locale" content="en_US">
-<meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png">
-<meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/thread.png">
-<meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/drange.png">
-<meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/compaction.png">
-<meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/lookup.png">
-<meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png">
-<meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/workflow.png">
-<meta property="og:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/exp.png">
+<meta property="og:image" content="http://example.com/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png">
+<meta property="og:image" content="http://example.com/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/thread.png">
+<meta property="og:image" content="http://example.com/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/drange.png">
+<meta property="og:image" content="http://example.com/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/compaction.png">
+<meta property="og:image" content="http://example.com/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/lookup.png">
+<meta property="og:image" content="http://example.com/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png">
+<meta property="og:image" content="http://example.com/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/workflow.png">
+<meta property="og:image" content="http://example.com/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/exp.png">
 <meta property="article:published_time" content="2022-06-14T01:47:27.000Z">
-<meta property="article:modified_time" content="2022-06-15T03:42:58.142Z">
+<meta property="article:modified_time" content="2022-06-16T02:23:12.735Z">
 <meta property="article:author" content="ezreal">
 <meta property="article:tag" content="Paper">
 <meta property="article:tag" content="Cloud Native">
 <meta property="article:tag" content="LSM">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png">
+<meta name="twitter:image" content="http://example.com/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png">
 
 <link rel="canonical" href="http://example.com/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/">
 
@@ -230,7 +230,7 @@
                   <i class="far fa-calendar-check"></i>
                 </span>
                 <span class="post-meta-item-text">Edited on</span>
-                <time title="Modified: 2022-06-15 11:42:58" itemprop="dateModified" datetime="2022-06-15T11:42:58+08:00">2022-06-15</time>
+                <time title="Modified: 2022-06-16 10:23:12" itemprop="dateModified" datetime="2022-06-16T10:23:12+08:00">2022-06-16</time>
               </span>
 
           
@@ -247,11 +247,11 @@
         <p>Nova-LSM 是一个存算分离的 LSM key-value store，计算和存储分为不同的组件并通过 RDMA 通信。整体包含 LSM-tree Component (LTC), Logging Component (LogC) 和 Storage Component (StoC) 这三个模块，LTC 和 LogC 都通过 StoC 存储数据。</p>
 <span id="more"></span>
 
-<h2 id="架构"><a href="#架构" class="headerlink" title="架构"></a>架构</h2><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png" alt="系统架构"></p>
+<h2 id="架构"><a href="#架构" class="headerlink" title="架构"></a>架构</h2><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/arch.png" alt="系统架构"></p>
 <p>基于 RDMA 网络将 LSM 进行存算分离，每个 LTC 负责处理某些 key range 的请求，LogC 用于记录日志，StoC 负责存储 SSTable 和日志文件。</p>
 <p>每个 LTC 为存储数据划分若干个 range，每个 range 由 LSM Tree 维护。range 和 LTC 的映射关系是动态调整的，在 Coordiantor 中保存，使用 lease 机制进行并发控制，同时使用 zookeeper 实现高可用。每个 range 包含了多个 Drange，每个 Drange 又有多个连续的 Trange。每个 Trange 的大小可以是不同的，根据负载分布进行调整，可以通过迁移 Drange 和 Trange 进行负载均衡（minor reorganization），在严重负载不均的情况下会重新计算 Trange 和 Drange（major reorganization）。在迁移时只需要通过 RDMA READ 从 StoC 读取日志记录构建 memtable 即可。</p>
 <h3 id="RDMA"><a href="#RDMA" class="headerlink" title="RDMA"></a>RDMA</h3><p>传统的网卡上做服务端之间的数据通信，首先 CPU 要把数据从用户空间拷贝一份到内核空间的 socket buffer 中，然后内核的 TCP&#x2F;IP 协议栈给数据添加头部和校验信息，物理层的网卡通过 DMA 从内核中 copy 数据后在发送到别的服务器的网卡上。<br>而 RDMA 简单来说就是省去了数据从用户态拷贝到内核态的步骤，不需要 CPU 参与，报文的组装和解析在硬件层完成。而对于数据库系统加速来说，通常使用的是 READ&#x2F;WRITE 的语义，两个 server 之间通过一对分别在 server 的队列（QP）进行异步通信。</p>
-<h3 id="线程模型"><a href="#线程模型" class="headerlink" title="线程模型"></a>线程模型</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/thread.png" alt="线程模型"></p>
+<h3 id="线程模型"><a href="#线程模型" class="headerlink" title="线程模型"></a>线程模型</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/thread.png" alt="线程模型"></p>
 <p>LTC 有四种线程：</p>
 <ul>
 <li>client worker thread: 接受外界请求</li>
@@ -265,7 +265,7 @@
 <li>compaction thread: 进行 SSTable 的 compaction 操作与文件的落盘</li>
 <li>storage thread: 负责 block 数据的读写</li>
 </ul>
-<h3 id="Drange"><a href="#Drange" class="headerlink" title="Drange"></a>Drange</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/drange.png" alt="Drange"></p>
+<h3 id="Drange"><a href="#Drange" class="headerlink" title="Drange"></a>Drange</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/drange.png" alt="Drange"></p>
 <p>LTC 在内存中维护了大量的 memtable 使得大量插入数据都可以暂时存储在内存中减少对磁盘的 IO 压力，但这也带来了几个挑战：</p>
 <ol>
 <li>immutable memtable 落盘后直接就是 level0 的 SSTable，那么这也意味着 level0 的 SSTable 数量也会相应增多，导致 compaction 到 level1+ 的时候造成的写放大会更严重</li>
@@ -279,16 +279,16 @@
 <li>major reorg<br>通过采样的写入负载频率数据来重新构建 Dranges 和 Tranges</li>
 </ul>
 <p>如果某个 key 是一个写入热点，那么 Drange 可以为这个单点的 range 做 duplicate，写入操作可以写到任意一个 Drange下的 memtable 中，减少了由同步写入一个 memtable 产生的开销，也分摊了单个 Drange 的写入负载压力。</p>
-<p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/compaction.png" alt="Drange Compaction"></p>
-<p>LTC 会有一个 coordinator thread 来进行 compaction 任务的调度，把热点 StoC 节点上的任务分发给别的空闲的 StoC 节点。存储节点首先 prefetch 所有 compaction job 中的 SSTable 到 memory 中，合并完后新的 SSTable 可能会写到本地或是其他存储节点上。compaction 完成后，存储节点会向 coordinator thread 返回所有包含新生成的 SSTable 列表，由其负责删除原来的 SSTable 并更新元数据文件。</p>
-<h2 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h2><h3 id="Get"><a href="#Get" class="headerlink" title="Get"></a>Get</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/lookup.png" alt="lookup index"></p>
+<p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/compaction.png" alt="Drange Compaction"></p>
+<p>LTC 会有一个 compaction thread 来进行 compaction 任务的调度，把热点 StoC 节点上的任务分发给别的空闲的 StoC 节点。存储节点首先 prefetch 所有 compaction job 中的 SSTable 到 memory 中，合并完后新的 SSTable 可能会写到本地或是其他存储节点上。compaction 完成后，存储节点会向 compaction thread 返回所有包含新生成的 SSTable 列表，由其负责删除原来的 SSTable 并更新元数据文件。</p>
+<h2 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h2><h3 id="Get"><a href="#Get" class="headerlink" title="Get"></a>Get</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/lookup.png" alt="lookup index"></p>
 <p>每个 LTC 会维护一个 lookup index，来维护 key 的最新 value 具体保存在哪个 level0 的 SSTable 或者 memtable。如果 index 中没有相关记录才去查询更高 level 的 SSTable。并且 LTC 为每个 SSTable 在内存中维护 bloom filter 来剪枝。除此之外更高 level 的 SSTable 的查询操作也可以并行化。</p>
 <p>当写操作插入一条新数据到 memtable m 的时候，会更新 &lt;key, mid&gt; 映射，mid 用来唯一标记一个 memtable。LTC 会额外维护一个映射结构：MIDToTable，维护 mid 到一个 memtable 的指针或者 level0 的 SSTable 的 file number。<br>当 compaction 操作将 immutable memtable 从 sstable flush 到 StoC 的时候，就会原子更新这个 MIDToTable 结构中 mid 到 SSTable file number的映射，同时把对应的指向 memtable 的指针设为无效。</p>
 <h3 id="Scan"><a href="#Scan" class="headerlink" title="Scan"></a>Scan</h3><p>为每个 Drange 的 memtable 和 level0 SSTable 维护 range index，scan 时进行二分查找定位到相应分区，并依次 scan level1+ 的 range。</p>
-<h3 id="Placement"><a href="#Placement" class="headerlink" title="Placement"></a>Placement</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png" alt="SSTable Placement"></p>
+<h3 id="Placement"><a href="#Placement" class="headerlink" title="Placement"></a>Placement</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/sst.png" alt="SSTable Placement"></p>
 <p>SSTable 被划分为更小的粒度 data fragment 在不同的存储节点中存储，Nova-LSM 采用 power-of-d (The Power of Two Random Choices) 的分片策略，假设 SST 被分成 p 个 fragment，LTC 则在 2 * p 个随机挑选出的节点中选择 disk io queue 最短的 p 个节点。随后 p 个 fragment 将会并行写入到不同的存储节点中，同时写入 index 和 bloom filter block 到存储节点中。</p>
 <p>为了保证可用性，data fragment 会构建一个 <code>parity block</code> 存储到不同的存储节点中。并且通过对 SST 的 metadata block 进行 replication 来保证高可用，读取请求可以从任意的 replica 中读取 metadata block。</p>
-<h3 id="Write"><a href="#Write" class="headerlink" title="Write"></a>Write</h3><p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/workflow.png" alt="write workflow"></p>
+<h3 id="Write"><a href="#Write" class="headerlink" title="Write"></a>Write</h3><p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/workflow.png" alt="write workflow"></p>
 <p>data fragment 写入 StoC 文件中的流程：</p>
 <ol>
 <li>client 发送写请求打开一个新的 StoC 文件</li>
@@ -304,7 +304,7 @@
 <li>RocksDB*: 64 RocksDB instances per server</li>
 <li>RocksDB-tuned: One RocksDB instance per server with tuned knobs</li>
 </ul>
-<p><img src="/2022/06/14/SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/exp.png" alt="性能测试"></p>
+<p><img src="/./SIGMOD-2021-Nova-LSM-A-Distributed-Component-based-LSM-tree-Key-value-Store/exp.png" alt="性能测试"></p>
 <ul>
 <li>Drange 对写入热点场景优化明显</li>
 <li>lookup index 对读取最新版本数据优化明显</li>
