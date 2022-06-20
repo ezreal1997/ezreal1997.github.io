@@ -73,6 +73,37 @@
       </tags>
   </entry>
   <entry>
+    <title>FoundationDB Record Layer: A Multi-Tenant Structured Datastore</title>
+    <url>/2022/06/13/FoundationDB-Record-Layer-A-Multi-Tenant-Structured-Datastore/</url>
+    <content><![CDATA[<p>FoundationDB Record Layer 是建立在 FoundationDB 之上的类关系模型的结构化数据层，支持多租户，以 library 方式提供给应用，目前没有实现 SQL。</p>
+<span id="more"></span>
+
+<h2 id="整体架构"><a href="#整体架构" class="headerlink" title="整体架构"></a>整体架构</h2><p><img src="/2022/06/13/FoundationDB-Record-Layer-A-Multi-Tenant-Structured-Datastore/arch.png" alt="Record Layer 架构"></p>
+<p>FoundationDB Record Layer 的租户粒度是 logic database，也叫 record store，其实就是一段逻辑上连续（前缀一样）的 key-value。</p>
+<p>如上图所示，FoundationDB Record Layer 的整体架构：</p>
+<ul>
+<li>应用程序（Application）通过 library 的方式使用 FoundationDB Record Layer。</li>
+<li>一个 record store 包含 record、indexes 和 metadata，它们都被编码成一段连续（前缀一样）的 key-value，存储在 FoundationDB。</li>
+<li>MetaData Store 主要存储的是 schema 的定义，可以保存到 FoundationDB 或者其他存储。大部分情况下，这些数据都会被 cache 在 client。</li>
+</ul>
+<p><img src="/2022/06/13/FoundationDB-Record-Layer-A-Multi-Tenant-Structured-Datastore/cloudkit.png" alt="CloudKit 使用 FoundationDB Record Layer"></p>
+<p>苹果公司内部的 CloudKit 框架使用 FoundationDB Record Layer 管理数据：一个用户（User）的一个应用（Application）的数据被组织成一个 record store（租户）。所以，CloudKit 使用 FoundationDB Record Layer 维护的租户数量为：用户数 * 应用数，数量上大概在数十亿级别。</p>
+<h2 id="类关系模型"><a href="#类关系模型" class="headerlink" title="类关系模型"></a>类关系模型</h2><p>FoundationDB Record Layer 通过 Protocol Buffer message 来定义 schema，同时支持多种内置的索引类型。为了适应各种业务需求，FoundationDB Record Layer 在设计上提供了一定的扩展性，应用可以通过类似插件的方式实现自己的索引类型。</p>
+<p>在 FoundationDB Record Layer 里，“索引（index）”是一个更宽泛的概念。我们一般提到数据库索引，在 FoundationDB Record Layer 这里被成为 VALUE indexes。</p>
+<p>为了实现各种类型的“索引”，FoundationDB Record Layer 引入了两个概念：</p>
+<ul>
+<li>key expression<br>key expression 就是一个根据 record 生成 index-key 的生成器</li>
+<li>index maintanance<br>index maintanance 是用来当 record 发生变化时维护对应的索引</li>
+</ul>
+<p>这两者类似一个拦截器，拦截每一个 record 的变化信息，生成相应的 key-value。只要经过 key expression 和 index maintanance 生成的 key-value，在 FoundationDB Record Layer 里都被称为“索引”。</p>
+]]></content>
+      <tags>
+        <tag>OCC</tag>
+        <tag>FoundationDB</tag>
+        <tag>Paper</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>[SIGMOD 2021] FoundationDB: A Distributed Unbundled Transactional Key Value Store</title>
     <url>/2022/06/09/FoundationDB-A-Distributed-Unbundled-Transactional-Key-Value-Store/</url>
     <content><![CDATA[<p>FoundationDB 和传统的 key value store 相比，一方面在存储层实现的是强一致 ACID，另一方面通过可扩展的方式支持更多数据模型，并发控制采用 OCC 同时不支持超过 5s 的长事务。</p>
@@ -123,6 +154,50 @@
         <tag>OCC</tag>
         <tag>FoundationDB</tag>
         <tag>Paper</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage</title>
+    <url>/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/</url>
+    <content><![CDATA[<h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。</p>
+<span id="more"></span>
+
+<h3 id="AlloyDB-架构"><a href="#AlloyDB-架构" class="headerlink" title="AlloyDB 架构"></a>AlloyDB 架构</h3><p>AlloyDB 存储层是一个分布式系统，由三个主要部分组成：</p>
+<ul>
+<li>一种低延迟的 regional log storage service，用于高速的 WAL 写入</li>
+<li>负责处理 WAL 并生成 “Materialized(物化)” 数据库页面的 log processing service (LPS)</li>
+<li>负责对数据进行容错、分片的 regional block storage，在区域存储发生故障的情况下也能保证持久性</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png" alt="Overview of PostgreSQL as integrated with the storage service."></p>
+<h4 id="数据流程"><a href="#数据流程" class="headerlink" title="数据流程"></a>数据流程</h4><ul>
+<li>Primary Instance 持久化 WAL ，将数据库修改操作（INSERT&#x2F;DELETE&#x2F;UPDATE）传送到 log storage。随后，LPS 不断重放这些 WAL 的修改操作，并将最新的数据库页面物化到 block storage。</li>
+<li>为了使 Replica Instances 的本地缓存保持最新，AlloyDB 还将 WAL 记录从 Primary Instance 流式传输到 Replica Instances，以通知它们最新的更改。</li>
+</ul>
+<h4 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h4><ul>
+<li>Full compute&#x2F;storage disaggregation<br>LPS 可以根据工作负载进行横向扩展，并在需要时透明地添加更多计算资源来处理日志以避免热点</li>
+<li>Storage-layer replication<br>跨多个区域同步复制所有 Data Block</li>
+<li>Efficient IO paths &#x2F; no full-page writes<br>对于更新操作，计算层仅将 WAL 传递给存储层，存储层不断重放 WAL。在这种设计中，数据库层不需要 Checkpoint，也不需要通过将完整的 Data Block发送到存储层来避免 torn pages problem</li>
+<li>Low-latency WAL writing</li>
+<li>Fast creation of read replica instances</li>
+<li>Fast restart recovery</li>
+<li>Storage-layer backups</li>
+</ul>
+<h3 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h3><h4 id="写入请求"><a href="#写入请求" class="headerlink" title="写入请求"></a>写入请求</h4><p>由客户端向 Primary Instance 发起，在经过 DB 层解析后，变为一组 WAL 发到存储层。在 WAL 同步写入成功后，事务提交成功返回。之后，LPS 会将日志异步的物化为 Data Block。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png" alt="Write Process"></p>
+<h4 id="读取请求"><a href="#读取请求" class="headerlink" title="读取请求"></a>读取请求</h4><ul>
+<li>由客户端向任何 Instance 发起，在 DB 层解析后，如果命中该 DB 层中的 Buffer Cache，则直接返回；否则去更大的、类似二级缓存的 Ultra-fast Cache 中去找，如命中，则仍可不访问存储层。</li>
+<li>如 Ultra-fast Cache 中仍然缺少所需 block，则会带上 block id 和 LSN，向存储层发送 block 读取请求，<strong>这里的 Ultra-fast Cache 会不会是 NVM 之类的存储介质？</strong></li>
+<li>LSN 用于等待 LPS apply 进度，以保证一致性视图。</li>
+</ul>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png" alt="Read Process"></p>
+<h3 id="存储层弹性伸缩"><a href="#存储层弹性伸缩" class="headerlink" title="存储层弹性伸缩"></a>存储层弹性伸缩</h3><p>Data Block 按组划分到不同的 Shard 中（如一个 Block 是 8KB，一个 Shard 是 10GB，那么一个 Shard 就包含 1310720 个 Block）。每个 Shard 对应一个 LPS，同时 Shard 和 LPS 的映射关系可以会根据 LPS 的伸缩动态变化。</p>
+<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png" alt="LPS Elasticity"></p>
+<h3 id="存储层-Replication-和-Recovery"><a href="#存储层-Replication-和-Recovery" class="headerlink" title="存储层 Replication 和 Recovery"></a>存储层 Replication 和 Recovery</h3><p>AlloyDB 的目标是提供数据持久性和高系统可用性，即使在区域性故障的情况下（例如，在数据中心断电或火灾的情况下）也是如此。为此，每个 AlloyDB 实例的存储层分布在三个 Zone 中。每个 Zone 都有一个完整的数据库状态副本，它通过应用来自 log storage 的 WAL 来不断更新 Data Block。<br><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png" alt="Replication"></p>
+]]></content>
+      <tags>
+        <tag>Cloud Native</tag>
+        <tag>Disaggregation</tag>
+        <tag>Postgres</tag>
       </tags>
   </entry>
   <entry>
@@ -187,37 +262,6 @@
 ]]></content>
       <tags>
         <tag>Golang</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>FoundationDB Record Layer: A Multi-Tenant Structured Datastore</title>
-    <url>/2022/06/13/FoundationDB-Record-Layer-A-Multi-Tenant-Structured-Datastore/</url>
-    <content><![CDATA[<p>FoundationDB Record Layer 是建立在 FoundationDB 之上的类关系模型的结构化数据层，支持多租户，以 library 方式提供给应用，目前没有实现 SQL。</p>
-<span id="more"></span>
-
-<h2 id="整体架构"><a href="#整体架构" class="headerlink" title="整体架构"></a>整体架构</h2><p><img src="/2022/06/13/FoundationDB-Record-Layer-A-Multi-Tenant-Structured-Datastore/arch.png" alt="Record Layer 架构"></p>
-<p>FoundationDB Record Layer 的租户粒度是 logic database，也叫 record store，其实就是一段逻辑上连续（前缀一样）的 key-value。</p>
-<p>如上图所示，FoundationDB Record Layer 的整体架构：</p>
-<ul>
-<li>应用程序（Application）通过 library 的方式使用 FoundationDB Record Layer。</li>
-<li>一个 record store 包含 record、indexes 和 metadata，它们都被编码成一段连续（前缀一样）的 key-value，存储在 FoundationDB。</li>
-<li>MetaData Store 主要存储的是 schema 的定义，可以保存到 FoundationDB 或者其他存储。大部分情况下，这些数据都会被 cache 在 client。</li>
-</ul>
-<p><img src="/2022/06/13/FoundationDB-Record-Layer-A-Multi-Tenant-Structured-Datastore/cloudkit.png" alt="CloudKit 使用 FoundationDB Record Layer"></p>
-<p>苹果公司内部的 CloudKit 框架使用 FoundationDB Record Layer 管理数据：一个用户（User）的一个应用（Application）的数据被组织成一个 record store（租户）。所以，CloudKit 使用 FoundationDB Record Layer 维护的租户数量为：用户数 * 应用数，数量上大概在数十亿级别。</p>
-<h2 id="类关系模型"><a href="#类关系模型" class="headerlink" title="类关系模型"></a>类关系模型</h2><p>FoundationDB Record Layer 通过 Protocol Buffer message 来定义 schema，同时支持多种内置的索引类型。为了适应各种业务需求，FoundationDB Record Layer 在设计上提供了一定的扩展性，应用可以通过类似插件的方式实现自己的索引类型。</p>
-<p>在 FoundationDB Record Layer 里，“索引（index）”是一个更宽泛的概念。我们一般提到数据库索引，在 FoundationDB Record Layer 这里被成为 VALUE indexes。</p>
-<p>为了实现各种类型的“索引”，FoundationDB Record Layer 引入了两个概念：</p>
-<ul>
-<li>key expression<br>key expression 就是一个根据 record 生成 index-key 的生成器</li>
-<li>index maintanance<br>index maintanance 是用来当 record 发生变化时维护对应的索引</li>
-</ul>
-<p>这两者类似一个拦截器，拦截每一个 record 的变化信息，生成相应的 key-value。只要经过 key expression 和 index maintanance 生成的 key-value，在 FoundationDB Record Layer 里都被称为“索引”。</p>
-]]></content>
-      <tags>
-        <tag>OCC</tag>
-        <tag>FoundationDB</tag>
-        <tag>Paper</tag>
       </tags>
   </entry>
   <entry>
@@ -361,50 +405,6 @@
 ]]></content>
       <tags>
         <tag>Golang</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>[Google] AlloyDB for PostgreSQL under the hood: Intelligent, database-aware storage</title>
-    <url>/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/</url>
-    <content><![CDATA[<h3 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h3><p>在 2022 年 Google I&#x2F;O 上发布了 AlloyDB for PostgreSQL，一个完全托管、兼容 PostgreSQL 的数据库，支持弹性存储和计算、智能缓存和 AI&#x2F;ML 支持的管理。此外，AlloyDB 提供了无与伦比的性价比：在性能测试中，它在事务工作负载上的速度比标准 PostgreSQL 快 4 倍以上，分析查询速度高达 100 倍。</p>
-<span id="more"></span>
-
-<h3 id="AlloyDB-架构"><a href="#AlloyDB-架构" class="headerlink" title="AlloyDB 架构"></a>AlloyDB 架构</h3><p>AlloyDB 存储层是一个分布式系统，由三个主要部分组成：</p>
-<ul>
-<li>一种低延迟的 regional log storage service，用于高速的 WAL 写入</li>
-<li>负责处理 WAL 并生成 “Materialized(物化)” 数据库页面的 log processing service (LPS)</li>
-<li>负责对数据进行容错、分片的 regional block storage，在区域存储发生故障的情况下也能保证持久性</li>
-</ul>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/overview.png" alt="Overview of PostgreSQL as integrated with the storage service."></p>
-<h4 id="数据流程"><a href="#数据流程" class="headerlink" title="数据流程"></a>数据流程</h4><ul>
-<li>Primary Instance 持久化 WAL ，将数据库修改操作（INSERT&#x2F;DELETE&#x2F;UPDATE）传送到 log storage。随后，LPS 不断重放这些 WAL 的修改操作，并将最新的数据库页面物化到 block storage。</li>
-<li>为了使 Replica Instances 的本地缓存保持最新，AlloyDB 还将 WAL 记录从 Primary Instance 流式传输到 Replica Instances，以通知它们最新的更改。</li>
-</ul>
-<h4 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h4><ul>
-<li>Full compute&#x2F;storage disaggregation<br>LPS 可以根据工作负载进行横向扩展，并在需要时透明地添加更多计算资源来处理日志以避免热点</li>
-<li>Storage-layer replication<br>跨多个区域同步复制所有 Data Block</li>
-<li>Efficient IO paths &#x2F; no full-page writes<br>对于更新操作，计算层仅将 WAL 传递给存储层，存储层不断重放 WAL。在这种设计中，数据库层不需要 Checkpoint，也不需要通过将完整的 Data Block发送到存储层来避免 torn pages problem</li>
-<li>Low-latency WAL writing</li>
-<li>Fast creation of read replica instances</li>
-<li>Fast restart recovery</li>
-<li>Storage-layer backups</li>
-</ul>
-<h3 id="读写流程"><a href="#读写流程" class="headerlink" title="读写流程"></a>读写流程</h3><h4 id="写入请求"><a href="#写入请求" class="headerlink" title="写入请求"></a>写入请求</h4><p>由客户端向 Primary Instance 发起，在经过 DB 层解析后，变为一组 WAL 发到存储层。在 WAL 同步写入成功后，事务提交成功返回。之后，LPS 会将日志异步的物化为 Data Block。</p>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/write.png" alt="Write Process"></p>
-<h4 id="读取请求"><a href="#读取请求" class="headerlink" title="读取请求"></a>读取请求</h4><ul>
-<li>由客户端向任何 Instance 发起，在 DB 层解析后，如果命中该 DB 层中的 Buffer Cache，则直接返回；否则去更大的、类似二级缓存的 Ultra-fast Cache 中去找，如命中，则仍可不访问存储层。</li>
-<li>如 Ultra-fast Cache 中仍然缺少所需 block，则会带上 block id 和 LSN，向存储层发送 block 读取请求，<strong>这里的 Ultra-fast Cache 会不会是 NVM 之类的存储介质？</strong></li>
-<li>LSN 用于等待 LPS apply 进度，以保证一致性视图。</li>
-</ul>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/read.png" alt="Read Process"></p>
-<h3 id="存储层弹性伸缩"><a href="#存储层弹性伸缩" class="headerlink" title="存储层弹性伸缩"></a>存储层弹性伸缩</h3><p>Data Block 按组划分到不同的 Shard 中（如一个 Block 是 8KB，一个 Shard 是 10GB，那么一个 Shard 就包含 1310720 个 Block）。每个 Shard 对应一个 LPS，同时 Shard 和 LPS 的映射关系可以会根据 LPS 的伸缩动态变化。</p>
-<p><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/storage.png" alt="LPS Elasticity"></p>
-<h3 id="存储层-Replication-和-Recovery"><a href="#存储层-Replication-和-Recovery" class="headerlink" title="存储层 Replication 和 Recovery"></a>存储层 Replication 和 Recovery</h3><p>AlloyDB 的目标是提供数据持久性和高系统可用性，即使在区域性故障的情况下（例如，在数据中心断电或火灾的情况下）也是如此。为此，每个 AlloyDB 实例的存储层分布在三个 Zone 中。每个 Zone 都有一个完整的数据库状态副本，它通过应用来自 log storage 的 WAL 来不断更新 Data Block。<br><img src="/2022/05/22/Google-AlloyDB-for-PostgreSQL-under-the-hood-Intelligent-database-aware-storage/replication.png" alt="Replication"></p>
-]]></content>
-      <tags>
-        <tag>Cloud Native</tag>
-        <tag>Disaggregation</tag>
-        <tag>Postgres</tag>
       </tags>
   </entry>
   <entry>
@@ -624,93 +624,6 @@
       </tags>
   </entry>
   <entry>
-    <title>Paper accepted by VLDB 2022</title>
-    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
-    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
-]]></content>
-      <tags>
-        <tag>Publication</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Raft Quiz</title>
-    <url>/2022/05/15/Raft-Quiz/</url>
-    <content><![CDATA[<h3 id="1"><a href="#1" class="headerlink" title="1"></a>1</h3><h4 id="Question"><a href="#Question" class="headerlink" title="Question"></a>Question</h4><p>下面的每张图都显示了一台 Raft 服务器上可能存储的日志（日志内容未显示，只显示日志的 index 和任期号）。考虑每份日志都是独立的，下面的日志可能发生在 Raft 中吗？如果不能，请解释原因。</p>
-<p><img src="/2022/05/15/Raft-Quiz/raft_q1.png"></p>
-<span id="more"></span>
-
-<h4 id="Answer"><a href="#Answer" class="headerlink" title="Answer"></a>Answer</h4><p>a. 不能：任期在日志里必须单调递增。</p>
-<p>具体来说，写入日志 &lt;4, 2&gt; 的 Leader1 只能从当前任期 &gt;&#x3D; 3 的 Leader2 那里接收到日志 &lt;3, 3&gt; ，所以 Leader1 当前任期也将 &gt;&#x3D; 3，那么它就不能写入 &lt;4, 2&gt;</p>
-<p>b. 可以</p>
-<p>c. 可以</p>
-<p>d. 不能：日志不允许空洞。 具体来说，Leader 只能追加日志，<code>AppendEntries</code> 中的一致性检查永远不会允许空洞。</p>
-<h3 id="2"><a href="#2" class="headerlink" title="2"></a>2</h3><h4 id="Question-1"><a href="#Question-1" class="headerlink" title="Question"></a>Question</h4><p>下图显示了一个 5 台服务器集群中的日志（日志内容未显示）。哪些日志记录可以安全地应用到状态机？请解释你的答案。</p>
-<p><img src="/2022/05/15/Raft-Quiz/raft_q2.png"></p>
-<h4 id="Answer-1"><a href="#Answer-1" class="headerlink" title="Answer"></a>Answer</h4><p>日志记录 &lt;1,1&gt; 和 &lt;2,1&gt; 可以安全应用（到状态机）：</p>
-<p>如果一条日志记录没有存储在多数派上，它就不能被安全地应用。这是因为少数服务器可能故障，并且其它服务器（构成多数派）可以在不知道该日志记录的情况下继续运行。</p>
-<p>因此，我们只需要考虑记录 &lt;1,1&gt;, &lt;2,1&gt;, &lt;3,2&gt;, &lt;4,2&gt;, &lt;5,2&gt;。</p>
-<p>我们必须弄清楚哪些节点可以当选 Leader，然后看看它们是否会导致这些日志记录被删除。(Leader 处理不一致是通过强 Follower 直接复制自己的日志来解决的)</p>
-<p>S2 可以被选为 Leader，因为它的日志至少和 S3、S4 和 S5 一样完整。那么它可能导致 &lt;3,2&gt;, &lt;4,2&gt; 和 &lt;5,2&gt; 被删除，所以这些日志记录不能被安全地应用。</p>
-<p>所以我们只剩下 &lt;1,1&gt; 和 &lt;2,1&gt; 可能安全地应用（到状态机）。</p>
-<p>S3 和 S4 不能被选为 Leader，因为它们的日志不够完整。S5 能被选举为 LEader，但是它包含了 &lt;1,1&gt; 和 &lt;2,1&gt; 。</p>
-<p>因此，只有记录 &lt;1,1&gt; 和 &lt;2,1&gt; 可以被安全地应用（到状态机）</p>
-<h3 id="3"><a href="#3" class="headerlink" title="3"></a>3</h3><h4 id="Question-2"><a href="#Question-2" class="headerlink" title="Question"></a>Question</h4><p>考虑下图，它显示了一个 6 台服务器集群中的日志，此时刚刚选出任期 7 的新 Leader（日志内容未显示，只显示日志的 index 和任期号）。对于图中每一个 Follower，给定的日志是否可能在一个正常运行的 Raft 系统中存在？如果是，请描述该情况如何发生的；如果不是，解释为什么。</p>
-<p><img src="/2022/05/15/Raft-Quiz/raft_q3.png"></p>
-<h4 id="Answer-2"><a href="#Answer-2" class="headerlink" title="Answer"></a>Answer</h4><p>(a) 不能。<strong>如果在不同的日志中的两条记录拥有相同的索引和任期号，那么他们之前的所有日志条目也全部相同。</strong> &lt;5, 3&gt; 在 Leader 和 a 中都存在，但是前面的日志却不相同。</p>
-<p>(b) 不能。同上，&lt;6, 5&gt; 在 Leader 和 b 中都存在，但是前面的日志却不相同。</p>
-<p>(c) 可能。c 可能是第 6 任期的 Leader，其起始日志为 &lt;1,1&gt;, &lt;2,1&gt; 并且可能在其日志中写了一堆记录，而没有与我们第 7 任期的当前 Leader 进行通信。这也假设当前 Leader 的 &lt;3,3&gt;、&lt;4,3&gt;、&lt;5,3&gt;、&lt;6,5&gt; 这几个日志记录在第 5 任期没有被写入，这是可能的。</p>
-<p>(d) 不能。在一个日志中，任期只能是单调递增的。</p>
-<p>(e) 可能。例如，e 是任期 1 的 Leader，提交了日志 &lt;1,1&gt; 和 &lt;2,1&gt;，然后与其它服务器失联（网络分区），但还在继续处理客户端请求。</p>
-<h3 id="4"><a href="#4" class="headerlink" title="4"></a>4</h3><h4 id="Question-3"><a href="#Question-3" class="headerlink" title="Question"></a>Question</h4><p>假设硬件或软件错误破坏了 Leader 为某个特定 Follower 存储的 <code>nextIndex</code> 值。这是否会影响系统的安全 ?</p>
-<h4 id="Answer-3"><a href="#Answer-3" class="headerlink" title="Answer"></a>Answer</h4><p>不会</p>
-<p>如果 <code>nextIndex</code> 的值太小，Leader 将发送额外的 <code>AppendEntries</code> 请求。每个请求都不会对 Follower 的日志产生任何影响（它们将进行一致性检查，但不会和 Follower 日志中的记录产生冲突，也不会向 Follower 提供该 Follower 没有存储的任何日志记录），成功的响应将告诉 Leader 应该增加其 <code>nextIndex</code>。</p>
-<p>如果 <code>nextIndex</code> 的值太大，Leader 也将发送额外的 <code>AppendEntries</code> 请求，对此，一致性检查将会失败，从而导致 Follower 拒绝该请求，Leader 将会递减 <code>nextIndex</code> 值并重试。</p>
-<p>无论哪种方式，这都是安全的行为，因为两种情况下都不会修改关键的状态。</p>
-<h3 id="5"><a href="#5" class="headerlink" title="5"></a>5</h3><h4 id="Question-4"><a href="#Question-4" class="headerlink" title="Question"></a>Question</h4><p>假设你实现了 Raft，并将它部署在同一个数据中心的所有服务器上。现在假设你要将系统部署到分布在世界各地的不同数据中心的每台服务器，与单数据中心版本相比，多数据中心的 Raft 需要做哪些更改？为什么？</p>
-<h4 id="Answer-4"><a href="#Answer-4" class="headerlink" title="Answer"></a>Answer</h4><p>我们需要将选举超时(election timeouts)时间设置得更长：预期的广播时间更长，选举超时时间应该比广播时间长得多，以便候选人有机会在再次超时之前完成一次选举。该算法其余部分不需要任何修改，因为它不依赖于时序。</p>
-<h3 id="6"><a href="#6" class="headerlink" title="6"></a>6</h3><h4 id="Question-5"><a href="#Question-5" class="headerlink" title="Question"></a>Question</h4><p>每个 Follower 都在其磁盘上存储了 3 个信息：当前任期（<code>currentTerm</code>）、最近的投票（<code>votedFor</code>）、以及所有接受的日志记录（<code>log[]</code>）。</p>
-<p>a. 假设 Follower 崩溃了，并且当它重启时，它最近的投票信息已丢失。该 Follower 重新加入集群是否安全（假设未对算法做任何修改）？解释一下你的答案。</p>
-<p>b. 现在，假设崩溃期间 Follower 的日志被截断（truncated）了，日志丢失了最后的一些记录。该 Follower 重新加入集群是否安全（假设未对算法做任何修改）？解释一下你的答案。</p>
-<h4 id="Answer-5"><a href="#Answer-5" class="headerlink" title="Answer"></a>Answer</h4><p>a. 不安全。这将允许一个服务器在同一任期内投票两次，这样以来，每个任期就可以有多个 Leader 参与，这几乎破坏了一切。</p>
-<p>例如，对于 3 台服务器：</p>
-<ul>
-<li>S1 获得 S1 和 S2 的投票，并且成为任期 2 的 Leader</li>
-<li>S2 重启，丢失了它在任期 2 中投过的票(votedFor)</li>
-<li>S3 获得 S2 和 S3 的选票，并且成为任期 2 的第二任 Leader</li>
-<li>现在 S1 和 S3 都可以在任期 2 同一 index 的日志记录上提交不同的值。</li>
-</ul>
-<p>b. 不安全。这将允许已提交的日志不被存储在多数派上，然后将允许同一 index 提交其它不同的值。 例如，对于 3 台服务器：</p>
-<ul>
-<li>S1 成为任期 2 的 Leader，并在自己和 S2 上追加写了 index&#x3D;1, term&#x3D;2, value&#x3D;X，并设置 committedIndex&#x3D;1，然后返回已提交的值 X 给客户端</li>
-<li>S2 重启，并且丢失了其日志中的记录</li>
-<li>S3（具有空的日志）成为任期 3 的 Leader，因为它的空日志也至少与 S2 一样完整。S3 在自己和 S2 上追加写 index&#x3D;1, term&#x3D;3, value&#x3D;Y，并设置committedIndex&#x3D;1，然后返回已提交的值 Y 给客户端</li>
-</ul>
-<h3 id="7"><a href="#7" class="headerlink" title="7"></a>7</h3><h4 id="Question-6"><a href="#Question-6" class="headerlink" title="Question"></a>Question</h4><p>如<a href="https://www.youtube.com/watch?v=YbZ3zDzDnrw">视频</a>中所述，即使其它服务器认为 Leader 崩溃并选出了新的 Leader 后，（老的）Leader 依然可能继续运行。新的 Leader 将与集群中的多数派联系并更新它们的任期，因此，老的 Leader 将在与多数派中的任何一台服务器通信后立即下台。然而，与此期间，它也可以继续充当 Leader，并向尚未被新 Leader 联系到的 Follower 发出请求；此外，客户端可以继续向老的 Leader 发送请求。我们知道，在选举结束后，老的 Leader 不能提交（commit）任何<strong>新的</strong>日志记录，因为这样做需要联系选举多数派中的至少一台服务器。但是，老的 Leader 是否有可能执行一个成功 <code>AppendEntries RPC</code>，从而完成在选举开始前收到的旧日志记录的提交？如果可以，请解释这种情况是如何发生的，并讨论这是否会给 Raft 协议带来问题。如果不能发生这种情况，请说明原因。</p>
-<h4 id="Answer-6"><a href="#Answer-6" class="headerlink" title="Answer"></a>Answer</h4><p>可能。仅当新 Leader 也包含正在提交的日志时，才会发生这种情况，所以不会引起问题。</p>
-<p>下面是一个在 5 台服务器发生这种情况的例子：</p>
-<ul>
-<li>带有空日志的 S1 成为任期 2 的 Leader，票选来自 S1，S2 和 S3</li>
-<li>S1 将 index&#x3D;1, term&#x3D;2, value&#x3D;X 追加写到它自己和 S2</li>
-<li>S2 的日志中包含 index&#x3D;1, term&#x3D;2, value&#x3D;X，S2 成为任期 3 的 Leader，票选来自 S2，S4 和 S5</li>
-<li>S1 将 index&#x3D;1, term&#x3D;2, value&#x3D;X 追加写到 S3</li>
-<li>此时，S1 已经完成了对 index&#x3D;1, term&#x3D;2, value&#x3D;X 的提交，即使它不再是当前任期的 Leader</li>
-</ul>
-<p>这种行为是安全的，因为任何新的 Leader 也必须包含该日志记录，因此它将永远存在。</p>
-<p>该日志记录必须存储在给新 Leader（记为 L）投票的服务器 S 上，并且必须在 S 给新 Leader 投票之前存储在 S 上，日志完整性会检测，S 只能在以下情况投票给 L： <code>L.lastLogTerm &gt; S.lastLogTerm</code> 或者 <code>(L.lastLogTerm == S.lastLogTerm and L.lastLogIndex &gt;= S.lastLogIndex)</code></p>
-<p>如果 L 是 S 之后的第一任 Leader，那么我们必须处于第二个条件下，那么 L 一定包含了 S 拥有的所有日志记录，包括我们担心的那个记录。</p>
-<p>如果 L’ 是 S 之后的第二任 Leader，那么 L’ 只有从 L 那里接收到了日志，它最新的任期号才可能比 S 大。但是 L 在把自己的日志复制到 L’ 时也一定已经把我们担心的那条日志复制到 L’ 了，所以这也是安全的。</p>
-<p>而且，这个论点对未来所有的 Leader 都成立。</p>
-<h3 id="8"><a href="#8" class="headerlink" title="8"></a>8</h3><h4 id="Question-7"><a href="#Question-7" class="headerlink" title="Question"></a>Question</h4><p>在配置变更过程中，如果当前 Leader 不在 C-new 中，一旦 C-new 的日志记录被提及，它就会下台。然而，这意味着有一段时间，Leader 不属于它所领导的集群（Leader 上存储的当前配置条目是 C-new，它不包括 Leader）。假设修改算法，如果 C-new 不包含 Leader，则使 Leader 在其日志存储了 C-new 时就立即下台。这种方法可能发生的最坏情况是什么？</p>
-<h4 id="Answer-7"><a href="#Answer-7" class="headerlink" title="Answer"></a>Answer</h4><p>答案 1: 假设一个不错的实现——一旦一个服务器不再属于其当前配置，它就不会再成为 Candidate。问题在于，C-old 中的另一台服务器可能会被选为 Leader，在其日志中追加 C-new，然后立即下台。</p>
-<p>更糟糕的是，这种情况可能会在 C-old 的多数派服务器上重复。一旦超过半数 C-old 存储了 C-new 条目，它就不能再重复了。由于日志完整性检查，没有 C-new 这条日志记录的 C-old 中的任何服务器都不能当选（超过半数的 C-old 需要日志 C-old+new，不会再给没有 C-new 这条日志记录的服务器投票。）</p>
-<p>在这之后，C-new 中的某台服务器必须当选，集群就会继续运行。所以最坏的情况其实只是跑了<strong>最多</strong>大约 |C-old|&#x2F;2 次额外的选举和选举超时。</p>
-<p>答案 2: 假设一个朴素的（naive）实现，仍允许一个不属于其当前配置的服务器成为 Candidate，在这种情况下，最坏的情况是， Leader 一下台就再次当选（它的日志仍然是完整的），然后再下台，然后无限重复。</p>
-]]></content>
-      <tags>
-        <tag>Raft</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>OCC 当前研究</title>
     <url>/2022/05/12/OCC-%E5%BD%93%E5%89%8D%E7%A0%94%E7%A9%B6/</url>
     <content><![CDATA[<h3 id="内存数据库"><a href="#内存数据库" class="headerlink" title="内存数据库"></a>内存数据库</h3><ul>
@@ -883,6 +796,15 @@
       </tags>
   </entry>
   <entry>
+    <title>Paper accepted by VLDB 2022</title>
+    <url>/2022/04/10/Paper-accepted-by-VLDB-2022/</url>
+    <content><![CDATA[<p><strong>Z. Ge</strong>, D. Loghin, B.C. Ooi, P. Ruan, T. Wang: <a href="https://www.comp.nus.edu.sg/~ooibc/hybriddb-vldb22.pdf">Hybrid Blockchain Database Systems: Design and Performance</a>, VLDB 2022.</p>
+]]></content>
+      <tags>
+        <tag>Publication</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Postgres 现存问题</title>
     <url>/2022/05/25/Postgres-%E7%8E%B0%E5%AD%98%E9%97%AE%E9%A2%98/</url>
     <content><![CDATA[<p>原文见 <a href="https://rbranson.medium.com/10-things-i-hate-about-postgresql-20dbab8c2791">10 Things I Hate About PostgreSQL</a></p>
@@ -901,15 +823,6 @@
 ]]></content>
       <tags>
         <tag>Postgres</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>TKDE Reviewer Invitation</title>
-    <url>/2022/05/10/TKDE-Reviewer-Invitation/</url>
-    <content><![CDATA[<p><strong>TKDE</strong>(IEEE Transactions on Knowledge and Data Engineering) Reviewer <a href="https://publons.com/researcher/5190849/zerui-ge/">https://publons.com/researcher/5190849/zerui-ge/</a></p>
-]]></content>
-      <tags>
-        <tag>Publication</tag>
       </tags>
   </entry>
   <entry>
@@ -987,6 +900,93 @@
         <tag>Cloud Native</tag>
         <tag>LSM</tag>
         <tag>RDMA</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Raft Quiz</title>
+    <url>/2022/05/15/Raft-Quiz/</url>
+    <content><![CDATA[<h3 id="1"><a href="#1" class="headerlink" title="1"></a>1</h3><h4 id="Question"><a href="#Question" class="headerlink" title="Question"></a>Question</h4><p>下面的每张图都显示了一台 Raft 服务器上可能存储的日志（日志内容未显示，只显示日志的 index 和任期号）。考虑每份日志都是独立的，下面的日志可能发生在 Raft 中吗？如果不能，请解释原因。</p>
+<p><img src="/2022/05/15/Raft-Quiz/raft_q1.png"></p>
+<span id="more"></span>
+
+<h4 id="Answer"><a href="#Answer" class="headerlink" title="Answer"></a>Answer</h4><p>a. 不能：任期在日志里必须单调递增。</p>
+<p>具体来说，写入日志 &lt;4, 2&gt; 的 Leader1 只能从当前任期 &gt;&#x3D; 3 的 Leader2 那里接收到日志 &lt;3, 3&gt; ，所以 Leader1 当前任期也将 &gt;&#x3D; 3，那么它就不能写入 &lt;4, 2&gt;</p>
+<p>b. 可以</p>
+<p>c. 可以</p>
+<p>d. 不能：日志不允许空洞。 具体来说，Leader 只能追加日志，<code>AppendEntries</code> 中的一致性检查永远不会允许空洞。</p>
+<h3 id="2"><a href="#2" class="headerlink" title="2"></a>2</h3><h4 id="Question-1"><a href="#Question-1" class="headerlink" title="Question"></a>Question</h4><p>下图显示了一个 5 台服务器集群中的日志（日志内容未显示）。哪些日志记录可以安全地应用到状态机？请解释你的答案。</p>
+<p><img src="/2022/05/15/Raft-Quiz/raft_q2.png"></p>
+<h4 id="Answer-1"><a href="#Answer-1" class="headerlink" title="Answer"></a>Answer</h4><p>日志记录 &lt;1,1&gt; 和 &lt;2,1&gt; 可以安全应用（到状态机）：</p>
+<p>如果一条日志记录没有存储在多数派上，它就不能被安全地应用。这是因为少数服务器可能故障，并且其它服务器（构成多数派）可以在不知道该日志记录的情况下继续运行。</p>
+<p>因此，我们只需要考虑记录 &lt;1,1&gt;, &lt;2,1&gt;, &lt;3,2&gt;, &lt;4,2&gt;, &lt;5,2&gt;。</p>
+<p>我们必须弄清楚哪些节点可以当选 Leader，然后看看它们是否会导致这些日志记录被删除。(Leader 处理不一致是通过强 Follower 直接复制自己的日志来解决的)</p>
+<p>S2 可以被选为 Leader，因为它的日志至少和 S3、S4 和 S5 一样完整。那么它可能导致 &lt;3,2&gt;, &lt;4,2&gt; 和 &lt;5,2&gt; 被删除，所以这些日志记录不能被安全地应用。</p>
+<p>所以我们只剩下 &lt;1,1&gt; 和 &lt;2,1&gt; 可能安全地应用（到状态机）。</p>
+<p>S3 和 S4 不能被选为 Leader，因为它们的日志不够完整。S5 能被选举为 LEader，但是它包含了 &lt;1,1&gt; 和 &lt;2,1&gt; 。</p>
+<p>因此，只有记录 &lt;1,1&gt; 和 &lt;2,1&gt; 可以被安全地应用（到状态机）</p>
+<h3 id="3"><a href="#3" class="headerlink" title="3"></a>3</h3><h4 id="Question-2"><a href="#Question-2" class="headerlink" title="Question"></a>Question</h4><p>考虑下图，它显示了一个 6 台服务器集群中的日志，此时刚刚选出任期 7 的新 Leader（日志内容未显示，只显示日志的 index 和任期号）。对于图中每一个 Follower，给定的日志是否可能在一个正常运行的 Raft 系统中存在？如果是，请描述该情况如何发生的；如果不是，解释为什么。</p>
+<p><img src="/2022/05/15/Raft-Quiz/raft_q3.png"></p>
+<h4 id="Answer-2"><a href="#Answer-2" class="headerlink" title="Answer"></a>Answer</h4><p>(a) 不能。<strong>如果在不同的日志中的两条记录拥有相同的索引和任期号，那么他们之前的所有日志条目也全部相同。</strong> &lt;5, 3&gt; 在 Leader 和 a 中都存在，但是前面的日志却不相同。</p>
+<p>(b) 不能。同上，&lt;6, 5&gt; 在 Leader 和 b 中都存在，但是前面的日志却不相同。</p>
+<p>(c) 可能。c 可能是第 6 任期的 Leader，其起始日志为 &lt;1,1&gt;, &lt;2,1&gt; 并且可能在其日志中写了一堆记录，而没有与我们第 7 任期的当前 Leader 进行通信。这也假设当前 Leader 的 &lt;3,3&gt;、&lt;4,3&gt;、&lt;5,3&gt;、&lt;6,5&gt; 这几个日志记录在第 5 任期没有被写入，这是可能的。</p>
+<p>(d) 不能。在一个日志中，任期只能是单调递增的。</p>
+<p>(e) 可能。例如，e 是任期 1 的 Leader，提交了日志 &lt;1,1&gt; 和 &lt;2,1&gt;，然后与其它服务器失联（网络分区），但还在继续处理客户端请求。</p>
+<h3 id="4"><a href="#4" class="headerlink" title="4"></a>4</h3><h4 id="Question-3"><a href="#Question-3" class="headerlink" title="Question"></a>Question</h4><p>假设硬件或软件错误破坏了 Leader 为某个特定 Follower 存储的 <code>nextIndex</code> 值。这是否会影响系统的安全 ?</p>
+<h4 id="Answer-3"><a href="#Answer-3" class="headerlink" title="Answer"></a>Answer</h4><p>不会</p>
+<p>如果 <code>nextIndex</code> 的值太小，Leader 将发送额外的 <code>AppendEntries</code> 请求。每个请求都不会对 Follower 的日志产生任何影响（它们将进行一致性检查，但不会和 Follower 日志中的记录产生冲突，也不会向 Follower 提供该 Follower 没有存储的任何日志记录），成功的响应将告诉 Leader 应该增加其 <code>nextIndex</code>。</p>
+<p>如果 <code>nextIndex</code> 的值太大，Leader 也将发送额外的 <code>AppendEntries</code> 请求，对此，一致性检查将会失败，从而导致 Follower 拒绝该请求，Leader 将会递减 <code>nextIndex</code> 值并重试。</p>
+<p>无论哪种方式，这都是安全的行为，因为两种情况下都不会修改关键的状态。</p>
+<h3 id="5"><a href="#5" class="headerlink" title="5"></a>5</h3><h4 id="Question-4"><a href="#Question-4" class="headerlink" title="Question"></a>Question</h4><p>假设你实现了 Raft，并将它部署在同一个数据中心的所有服务器上。现在假设你要将系统部署到分布在世界各地的不同数据中心的每台服务器，与单数据中心版本相比，多数据中心的 Raft 需要做哪些更改？为什么？</p>
+<h4 id="Answer-4"><a href="#Answer-4" class="headerlink" title="Answer"></a>Answer</h4><p>我们需要将选举超时(election timeouts)时间设置得更长：预期的广播时间更长，选举超时时间应该比广播时间长得多，以便候选人有机会在再次超时之前完成一次选举。该算法其余部分不需要任何修改，因为它不依赖于时序。</p>
+<h3 id="6"><a href="#6" class="headerlink" title="6"></a>6</h3><h4 id="Question-5"><a href="#Question-5" class="headerlink" title="Question"></a>Question</h4><p>每个 Follower 都在其磁盘上存储了 3 个信息：当前任期（<code>currentTerm</code>）、最近的投票（<code>votedFor</code>）、以及所有接受的日志记录（<code>log[]</code>）。</p>
+<p>a. 假设 Follower 崩溃了，并且当它重启时，它最近的投票信息已丢失。该 Follower 重新加入集群是否安全（假设未对算法做任何修改）？解释一下你的答案。</p>
+<p>b. 现在，假设崩溃期间 Follower 的日志被截断（truncated）了，日志丢失了最后的一些记录。该 Follower 重新加入集群是否安全（假设未对算法做任何修改）？解释一下你的答案。</p>
+<h4 id="Answer-5"><a href="#Answer-5" class="headerlink" title="Answer"></a>Answer</h4><p>a. 不安全。这将允许一个服务器在同一任期内投票两次，这样以来，每个任期就可以有多个 Leader 参与，这几乎破坏了一切。</p>
+<p>例如，对于 3 台服务器：</p>
+<ul>
+<li>S1 获得 S1 和 S2 的投票，并且成为任期 2 的 Leader</li>
+<li>S2 重启，丢失了它在任期 2 中投过的票(votedFor)</li>
+<li>S3 获得 S2 和 S3 的选票，并且成为任期 2 的第二任 Leader</li>
+<li>现在 S1 和 S3 都可以在任期 2 同一 index 的日志记录上提交不同的值。</li>
+</ul>
+<p>b. 不安全。这将允许已提交的日志不被存储在多数派上，然后将允许同一 index 提交其它不同的值。 例如，对于 3 台服务器：</p>
+<ul>
+<li>S1 成为任期 2 的 Leader，并在自己和 S2 上追加写了 index&#x3D;1, term&#x3D;2, value&#x3D;X，并设置 committedIndex&#x3D;1，然后返回已提交的值 X 给客户端</li>
+<li>S2 重启，并且丢失了其日志中的记录</li>
+<li>S3（具有空的日志）成为任期 3 的 Leader，因为它的空日志也至少与 S2 一样完整。S3 在自己和 S2 上追加写 index&#x3D;1, term&#x3D;3, value&#x3D;Y，并设置committedIndex&#x3D;1，然后返回已提交的值 Y 给客户端</li>
+</ul>
+<h3 id="7"><a href="#7" class="headerlink" title="7"></a>7</h3><h4 id="Question-6"><a href="#Question-6" class="headerlink" title="Question"></a>Question</h4><p>如<a href="https://www.youtube.com/watch?v=YbZ3zDzDnrw">视频</a>中所述，即使其它服务器认为 Leader 崩溃并选出了新的 Leader 后，（老的）Leader 依然可能继续运行。新的 Leader 将与集群中的多数派联系并更新它们的任期，因此，老的 Leader 将在与多数派中的任何一台服务器通信后立即下台。然而，与此期间，它也可以继续充当 Leader，并向尚未被新 Leader 联系到的 Follower 发出请求；此外，客户端可以继续向老的 Leader 发送请求。我们知道，在选举结束后，老的 Leader 不能提交（commit）任何<strong>新的</strong>日志记录，因为这样做需要联系选举多数派中的至少一台服务器。但是，老的 Leader 是否有可能执行一个成功 <code>AppendEntries RPC</code>，从而完成在选举开始前收到的旧日志记录的提交？如果可以，请解释这种情况是如何发生的，并讨论这是否会给 Raft 协议带来问题。如果不能发生这种情况，请说明原因。</p>
+<h4 id="Answer-6"><a href="#Answer-6" class="headerlink" title="Answer"></a>Answer</h4><p>可能。仅当新 Leader 也包含正在提交的日志时，才会发生这种情况，所以不会引起问题。</p>
+<p>下面是一个在 5 台服务器发生这种情况的例子：</p>
+<ul>
+<li>带有空日志的 S1 成为任期 2 的 Leader，票选来自 S1，S2 和 S3</li>
+<li>S1 将 index&#x3D;1, term&#x3D;2, value&#x3D;X 追加写到它自己和 S2</li>
+<li>S2 的日志中包含 index&#x3D;1, term&#x3D;2, value&#x3D;X，S2 成为任期 3 的 Leader，票选来自 S2，S4 和 S5</li>
+<li>S1 将 index&#x3D;1, term&#x3D;2, value&#x3D;X 追加写到 S3</li>
+<li>此时，S1 已经完成了对 index&#x3D;1, term&#x3D;2, value&#x3D;X 的提交，即使它不再是当前任期的 Leader</li>
+</ul>
+<p>这种行为是安全的，因为任何新的 Leader 也必须包含该日志记录，因此它将永远存在。</p>
+<p>该日志记录必须存储在给新 Leader（记为 L）投票的服务器 S 上，并且必须在 S 给新 Leader 投票之前存储在 S 上，日志完整性会检测，S 只能在以下情况投票给 L： <code>L.lastLogTerm &gt; S.lastLogTerm</code> 或者 <code>(L.lastLogTerm == S.lastLogTerm and L.lastLogIndex &gt;= S.lastLogIndex)</code></p>
+<p>如果 L 是 S 之后的第一任 Leader，那么我们必须处于第二个条件下，那么 L 一定包含了 S 拥有的所有日志记录，包括我们担心的那个记录。</p>
+<p>如果 L’ 是 S 之后的第二任 Leader，那么 L’ 只有从 L 那里接收到了日志，它最新的任期号才可能比 S 大。但是 L 在把自己的日志复制到 L’ 时也一定已经把我们担心的那条日志复制到 L’ 了，所以这也是安全的。</p>
+<p>而且，这个论点对未来所有的 Leader 都成立。</p>
+<h3 id="8"><a href="#8" class="headerlink" title="8"></a>8</h3><h4 id="Question-7"><a href="#Question-7" class="headerlink" title="Question"></a>Question</h4><p>在配置变更过程中，如果当前 Leader 不在 C-new 中，一旦 C-new 的日志记录被提及，它就会下台。然而，这意味着有一段时间，Leader 不属于它所领导的集群（Leader 上存储的当前配置条目是 C-new，它不包括 Leader）。假设修改算法，如果 C-new 不包含 Leader，则使 Leader 在其日志存储了 C-new 时就立即下台。这种方法可能发生的最坏情况是什么？</p>
+<h4 id="Answer-7"><a href="#Answer-7" class="headerlink" title="Answer"></a>Answer</h4><p>答案 1: 假设一个不错的实现——一旦一个服务器不再属于其当前配置，它就不会再成为 Candidate。问题在于，C-old 中的另一台服务器可能会被选为 Leader，在其日志中追加 C-new，然后立即下台。</p>
+<p>更糟糕的是，这种情况可能会在 C-old 的多数派服务器上重复。一旦超过半数 C-old 存储了 C-new 条目，它就不能再重复了。由于日志完整性检查，没有 C-new 这条日志记录的 C-old 中的任何服务器都不能当选（超过半数的 C-old 需要日志 C-old+new，不会再给没有 C-new 这条日志记录的服务器投票。）</p>
+<p>在这之后，C-new 中的某台服务器必须当选，集群就会继续运行。所以最坏的情况其实只是跑了<strong>最多</strong>大约 |C-old|&#x2F;2 次额外的选举和选举超时。</p>
+<p>答案 2: 假设一个朴素的（naive）实现，仍允许一个不属于其当前配置的服务器成为 Candidate，在这种情况下，最坏的情况是， Leader 一下台就再次当选（它的日志仍然是完整的），然后再下台，然后无限重复。</p>
+]]></content>
+      <tags>
+        <tag>Raft</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>TKDE Reviewer Invitation</title>
+    <url>/2022/05/10/TKDE-Reviewer-Invitation/</url>
+    <content><![CDATA[<p><strong>TKDE</strong>(IEEE Transactions on Knowledge and Data Engineering) Reviewer <a href="https://publons.com/researcher/5190849/zerui-ge/">https://publons.com/researcher/5190849/zerui-ge/</a></p>
+]]></content>
+      <tags>
+        <tag>Publication</tag>
       </tags>
   </entry>
   <entry>
@@ -1101,6 +1101,12 @@
       </tags>
   </entry>
   <entry>
+    <title>Hello World</title>
+    <url>/2022/04/10/hello-world/</url>
+    <content><![CDATA[<p>Hello World!</p>
+]]></content>
+  </entry>
+  <entry>
     <title>bug of Golang httputil.ReverseProxy</title>
     <url>/2022/05/12/bug-of-Golang-httputil-ReverseProxy/</url>
     <content><![CDATA[<p><code>writeLoop</code> and <code>readLoop</code> 使用同一个 conn。在 <code>readLoop</code> 出错时，会将 close conn，但是 <code>writeLoop</code> 不一定会及时捕获到这个信息，导致 <code>writeLoop</code> 继续往一个已经为 <code>nil</code> 的 bufWriter 写东西，从而 panic。</p>
@@ -1112,11 +1118,5 @@
       <tags>
         <tag>Golang</tag>
       </tags>
-  </entry>
-  <entry>
-    <title>Hello World</title>
-    <url>/2022/04/10/hello-world/</url>
-    <content><![CDATA[<p>Hello World!</p>
-]]></content>
   </entry>
 </search>
